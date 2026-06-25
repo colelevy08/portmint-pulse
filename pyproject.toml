@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "portmint-pulse"
+dynamic = ["version"]
+description = "A local, private dashboard for your Claude Code usage — limits, tokens, cost, and 30-day trends. Cross-platform, zero-config."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Cole Levy" }]
+keywords = ["claude", "claude-code", "anthropic", "usage", "dashboard", "tokens", "cost", "cli", "tui"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+
+# Pure standard library on Linux/macOS. Windows ships no IANA timezone database,
+# so we pull in the pure-Python `tzdata` there to support --timezone overrides.
+dependencies = [
+    "tzdata; platform_system == 'Windows'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/colelevy08/portmint-pulse"
+Repository = "https://github.com/colelevy08/portmint-pulse"
+Issues = "https://github.com/colelevy08/portmint-pulse/issues"
+
+[project.scripts]
+portmint-pulse = "portmint_pulse.cli:main"
+
+[tool.hatch.version]
+path = "portmint_pulse/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["portmint_pulse"]
+
+[tool.hatch.build.targets.sdist]
+include = ["portmint_pulse", "tests", "README.md", "LICENSE", "CHANGELOG.md"]

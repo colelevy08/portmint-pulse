@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Portmint Pulse">
+  <defs>
+    <linearGradient id="pm" x1="14" y1="12" x2="50" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5cf0c4"/><stop offset="1" stop-color="#2bd3a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#070b14"/>
+  <circle cx="32" cy="32" r="21" fill="#07182c"/>
+  <circle cx="32" cy="32" r="21" fill="none" stroke="url(#pm)" stroke-width="5"/>
+  <g fill="#34e0b3">
+    <circle cx="46" cy="32" r="2"/><circle cx="41.9" cy="41.9" r="2"/><circle cx="32" cy="46" r="2"/>
+    <circle cx="22.1" cy="41.9" r="2"/><circle cx="18" cy="32" r="2"/><circle cx="22.1" cy="22.1" r="2"/>
+    <circle cx="32" cy="18" r="2"/><circle cx="41.9" cy="22.1" r="2"/>
+  </g>
+</svg>
