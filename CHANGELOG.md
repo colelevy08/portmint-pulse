@@ -12,8 +12,8 @@ First public release.
 - Local Claude Code usage dashboard: live limit windows, Today/Week/Lifetime cards, 30-day token &
   cost trend charts, and per-model / per-project breakdowns.
 - Cross-platform support for **macOS, Windows, and Linux/WSL**:
-  - macOS credentials read from the login **Keychain** (with the `~/.claude/.credentials.json` file
-    as the fallback on other platforms).
+  - Credentials read from the `~/.claude/.credentials.json` file on all platforms, with the macOS
+    login **Keychain** as the fallback when the file is absent or has no usable token.
   - Local-timezone day bucketing by default, with a `--timezone` override; Windows pulls in `tzdata`
     automatically for named zones.
   - Terminal colors that enable VT mode on Windows and respect `NO_COLOR`.
@@ -21,7 +21,18 @@ First public release.
   with `python3 app.py` / `python -m portmint_pulse`.
 - `--projects-dir` override (and `PULSE_PROJECTS_DIR` / `PULSE_TIMEZONE` env vars).
 - Offline `pytest` suite with synthetic fixtures; CI across macOS/Windows/Linux and Python 3.9–3.13.
-- `tools/gen_demo.py` to preview the dashboard on fabricated data.
+- `tools/gen_demo.py` to preview the dashboard on fabricated data, and `tools/build_static_demo.py`
+  + a hosted **GitHub Pages live demo** (synthetic data, runs entirely in the browser).
+- Live limits are cached (~90s TTL) with **429 backoff** and last-good fallback, so the bars stay
+  steady and `/api/stats` never blocks on a slow/rate-limited usage API.
+- DST-aware local-timezone resolution on macOS/Linux (resolves the IANA zone); Windows falls back to
+  a fixed-offset zone — use `--timezone` there for a named zone. The dashboard labels the zone it's
+  actually using (no more hardcoded Eastern).
+- Friendly **empty-state** panel for a brand-new install, amber callouts for limit errors, and
+  HTML-escaped project/model names.
+- Transcript cache keyed on `(mtime, size)` so same-mtime appends aren't missed; macOS Keychain is
+  consulted even when a tokenless credentials file exists.
+- A loud warning when binding a non-loopback `--host`.
 
 ### Privacy
 - The dashboard page makes zero outbound requests (no web fonts/CDNs).

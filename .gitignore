@@ -10,6 +10,9 @@ dist/
 *.egg-info/
 .eggs/
 
+# Generated static demo site (built in CI for GitHub Pages)
+site/
+
 # Test / tooling caches
 .pytest_cache/
 .mypy_cache/

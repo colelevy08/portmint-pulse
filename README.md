@@ -20,6 +20,8 @@ per-project breakdowns, and 30-day trend charts.
 
 <img src="assets/screenshot.png" width="860" alt="Portmint Pulse dashboard" />
 
+### ▶ **[Try the live demo →](https://colelevy08.github.io/portmint-pulse/)**  ·  no install, runs in your browser on fabricated data
+
 </div>
 
 ---
@@ -27,30 +29,51 @@ per-project breakdowns, and 30-day trend charts.
 ## Why this exists
 
 Claude Code records a wealth of usage data on your disk, but gives you no easy way to *see* it.
-The popular macOS menubar app [`claude-pulseinator`](https://github.com/mikelane/claude-pulseinator)
-visualizes some of it — but it's **macOS-only** (Swift + AppKit + SwiftUI + the macOS Keychain) and
-needs a whole **SigNoz + OpenTelemetry** stack for cost history.
+Most tools that do are either terminal-only, macOS-only, or need a Node toolchain. Portmint Pulse is
+a **visual browser dashboard** computed from the raw data Claude Code already writes locally — no
+Apple frameworks, no observability stack, no `npm`, no database, nothing to set up.
 
-**Portmint Pulse** is a from-scratch, cross-platform alternative that computes everything from the
-raw data Claude Code already writes locally. No Apple frameworks, no observability stack, no setup:
+| | Portmint Pulse | claude-pulseinator | ccusage |
+|---|---|---|---|
+| Form | **web dashboard** (charts, gauges) | macOS menubar | CLI text reports |
+| Runs on macOS / Windows / Linux | **✅ / ✅ / ✅** | ✅ / ❌ / ❌ | ✅ / ✅ / ✅ |
+| Live OAuth limit bars | ✅ 4 windows (5h, 7d all-models, 7d Opus, 7d Sonnet) + pay-as-you-go credits | ✅ | infers from local data |
+| Token / cost history | ✅ computed locally, **no setup** | uses SigNoz + OpenTelemetry | ✅ |
+| Per-project breakdown | ✅ visual bars | ❌ | ✅ (text) |
+| Dependencies | **Python stdlib only** | a Swift toolchain | a Node toolchain |
 
-| | claude-pulseinator (macOS) | **Portmint Pulse** |
-|---|---|---|
-| Runs on macOS | ✅ | ✅ |
-| Runs on **Windows** | ❌ | ✅ |
-| Runs on **Linux / WSL** | ❌ (AppKit/SwiftUI) | ✅ |
-| Live usage limits | ✅ 3 hardcoded windows | ✅ **every** window the API returns + pay-as-you-go credits |
-| Token / cost history | needs **SigNoz + OpenTelemetry** | ✅ computed locally from transcripts — **no setup** |
-| Cost estimation | from SigNoz | ✅ local engine, precise per-token-type & per-model pricing |
-| Per-**project** breakdown | ❌ | ✅ (by working directory) |
-| External services required | SigNoz, Keychain | **none** |
-| Dependencies | a Swift toolchain | **the Python standard library** |
+<sub>Comparison as of 2026-06; based on each project's public README. See [How Pulse compares](#how-pulse-compares) for the fuller, honest picture.</sub>
+
+**Privacy, in three lines** — the whole pitch:
+
+- 🔒 **Read-only.** It only reads files Claude Code already wrote; it never writes or deletes anything.
+- 📡 **One outbound call.** Your token is used in exactly one request — to `api.anthropic.com` for your
+  live limits (the same call Claude Code makes). The dashboard page itself fetches **nothing** (no fonts/CDNs).
+- 🏠 **Localhost only.** Binds to `127.0.0.1`; no telemetry, no analytics, no database.
+
+---
+
+## What you get
+
+- **Usage limits** — pulled live from your Claude Code login token: the 5-hour session window,
+  the 7-day all-models window, the 7-day Opus and Sonnet windows, and any pay-as-you-go credit balance.
+  Bars go mint → amber → red with reset countdowns.
+- **At a glance** — Today / This week / Lifetime cards: estimated cost, tokens, messages, sessions.
+- **Last 30 days** — tokens-per-day and cost-per-day area charts (hand-drawn SVG, hover for exact values).
+- **By model** — lifetime tokens & cost per Claude model, ranked by spend.
+- **By project** — lifetime tokens & cost per working directory, ranked by spend.
+
+Auto-refreshes every 60 seconds; manual **Refresh** button in the header. Days are bucketed in **your
+machine's local timezone** by default (`--timezone` to override).
 
 ---
 
 ## Install
 
-Pick whichever you like — all three give you the `portmint-pulse` command (or just run from source).
+Pick whichever you like — all give you the `portmint-pulse` command (or just run from source).
+
+> **Coming to PyPI** so it'll be a plain `pipx install portmint-pulse` / `uvx portmint-pulse`. Until
+> then, install straight from this repo:
 
 ### With `pipx` (recommended — isolated, always on your PATH)
 
@@ -81,19 +104,23 @@ cd portmint-pulse
 python3 app.py
 ```
 
-Then open **http://localhost:8787** — it auto-opens a tab. **Requirements:** Python 3.9+ and
-Claude Code installed & logged in. On Linux/macOS there are *zero* third-party dependencies; on
-Windows a small pure-Python `tzdata` is pulled in automatically (only used if you set `--timezone`).
+Then open **http://localhost:8787** — it auto-opens a tab. **Requirements:** Python 3.9+ and Claude
+Code installed & logged in. On Linux/macOS there are *zero* third-party dependencies; on Windows a
+small pure-Python `tzdata` is pulled in automatically (only used if you set `--timezone`).
 
 ### Options
 
 ```bash
 portmint-pulse --port 9000                  # use a different port
 portmint-pulse --no-browser                 # don't auto-open a tab
-portmint-pulse --host 0.0.0.0               # expose on your LAN (default: localhost only)
+portmint-pulse --host 0.0.0.0               # expose on your LAN — see the warning below
 portmint-pulse --timezone America/New_York  # bucket days in a specific zone (default: your local zone)
 portmint-pulse --version
 ```
+
+> ⚠️ `--host 0.0.0.0` (or any non-loopback host) serves your project names and full usage to everyone
+> on the network **with no authentication**. Pulse prints a warning when you do this. Only use it on a
+> network you trust.
 
 ### Keep it running
 
@@ -104,29 +131,26 @@ portmint-pulse --version
 
 ---
 
-## What you get
+## How Pulse compares
 
-- **Usage limits** — pulled live from your Claude Code login token: the 5-hour session window,
-  the 7-day all-models window, per-model 7-day windows, and any pay-as-you-go credit balance.
-  Bars go mint → amber → red with reset countdowns.
-- **At a glance** — Today / This week / Lifetime cards: estimated cost, tokens, messages, sessions.
-- **Last 30 days** — tokens-per-day and cost-per-day area charts (hand-drawn SVG, hover for exact values).
-- **By model** — lifetime tokens & cost per Claude model, ranked by spend.
-- **By project** — lifetime tokens & cost per working directory, ranked by spend.
+The Claude Code usage space is healthy — pick the tool whose *shape* fits you. Pulse is the
+**cross-platform visual dashboard with real live limit bars**; here's an honest map of the neighbors:
 
-Auto-refreshes every 60 seconds; manual **Refresh** button in the header.
+- **[ccusage](https://github.com/ryoppippi/ccusage)** — the category leader. A fast CLI that prints
+  daily/weekly/session token & cost reports (now across ~15 agents). Great if you want terminal text
+  and multi-agent coverage; it *infers* limit blocks from local data rather than reading the live
+  OAuth windows, and needs a Node toolchain.
+- **[Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor)** — a
+  beautiful Rich **TUI** focused on real-time burn rate and limit *prediction* (P90). Great if you live
+  in the terminal and want forecasting; it's terminal-only with no charts or per-project view.
+- **[claude-pulse](https://github.com/NoobyGains/claude-pulse)** (note: similar name) — a single-line
+  Claude Code **status line**. Great for an always-visible glance; no dashboard or history.
+- **[claude-usage](https://github.com/phuryn/claude-usage)** — the closest analog: a local **web
+  dashboard** + VS Code extension backed by SQLite/Chart.js.
 
----
-
-## Privacy
-
-Pulse is local-first and read-only by design:
-
-- It only ever **reads** files Claude Code already wrote (`~/.claude/projects/**` and your login token).
-- The dashboard page makes **zero outbound requests** — no web fonts, no analytics, no CDNs.
-- Your token leaves your machine in exactly **one** request: to `api.anthropic.com` for your live
-  limits (the same call Claude Code itself makes). Nothing else is sent anywhere. There is no database.
-- Binds to `127.0.0.1` (localhost) only, unless you explicitly pass `--host 0.0.0.0`.
+**Pulse is Claude Code-focused on purpose.** Want one tool across many agents? `ccusage` is excellent.
+Want live limit bars + cost/project charts in a browser, on any OS, with zero dependencies and zero
+setup? You're home.
 
 ---
 
@@ -135,9 +159,7 @@ Pulse is local-first and read-only by design:
 | Source | Used for |
 |---|---|
 | `~/.claude/projects/**/*.jsonl` | Token usage, cost, models, projects, history. One JSON-lines file per session; every assistant turn records its model, exact token counts, timestamp, and working directory. |
-| `~/.claude/.credentials.json` (Linux/WSL/Windows) **or** the macOS **Keychain** | The OAuth token, used for one HTTPS call to `api.anthropic.com/api/oauth/usage` to fetch your live limit windows. |
-
-Day/week bucketing uses **your machine's local timezone** by default; override with `--timezone`.
+| `~/.claude/.credentials.json` (Linux/WSL/Windows) **or** the macOS **Keychain** | The OAuth token, used for one HTTPS call to `api.anthropic.com/api/oauth/usage` to fetch your live limit windows (cached ~90s with 429 backoff). |
 
 ### About the cost numbers
 
@@ -169,23 +191,27 @@ app.py                      # run-from-a-checkout shim → portmint_pulse.cli:ma
 portmint_pulse/
   cli.py                    # argument parsing, timezone resolution, the startup banner
   pricing.py                # per-token pricing + model-name normalization
-  transcripts.py            # parse ~/.claude/projects, incremental mtime cache, aggregate
-  usage.py                  # fetch live limit windows (file or macOS Keychain credentials)
-  tz.py                     # local-timezone-by-default resolution (Windows-safe)
+  transcripts.py            # parse ~/.claude/projects, incremental (mtime,size) cache, aggregate
+  usage.py                  # fetch live limit windows (file or macOS Keychain creds), cached + 429 backoff
+  tz.py                     # local-timezone resolution: DST-aware on macOS/Linux, fixed-offset on Windows
   server.py                 # stdlib http.server: serves the page + /api/stats JSON
   web/dashboard.html        # the Portmint-branded single-page UI (inline CSS + SVG charts)
 tests/                      # offline pytest suite (synthetic fixtures, no real ~/.claude needed)
-tools/gen_demo.py           # generate synthetic data + serve (used for the screenshot above)
+tools/gen_demo.py           # generate synthetic data + serve (used for the screenshot/live demo)
 ```
 
 **Flow:** the browser loads `dashboard.html`, which polls `/api/stats`. That handler re-scans your
-transcripts (re-reading only files whose modification time changed — basically the active session),
-aggregates the cached per-file summaries, fetches the live limits, and returns one JSON snapshot. The
-first launch indexes every session up front (≈2s for ~1,800 sessions) so the first page load is instant.
+transcripts (re-reading only files whose `(mtime, size)` changed — basically the active session),
+aggregates the cached per-file summaries, fetches the live limits (served from a short cache), and
+returns one JSON snapshot. The first launch indexes every session up front (≈2s for ~1,800 sessions)
+so the first page load is instant.
 
 ---
 
 ## Try it without your own data
+
+The hosted **[live demo](https://colelevy08.github.io/portmint-pulse/)** runs entirely in your browser
+on fabricated data. To generate and serve your own demo locally:
 
 ```bash
 git clone https://github.com/colelevy08/portmint-pulse.git
@@ -197,16 +223,16 @@ python tools/gen_demo.py     # serves a dashboard on fabricated data at http://1
 
 ## How do I debug X?
 
-- **"Limits unavailable / token expired"** — run `claude` once in a terminal to refresh your login,
-  then hit Refresh. The OAuth token expires periodically. On macOS the token lives in the Keychain;
-  make sure you're logged in to Claude Code.
-- **Charts are empty / numbers look low** — check that `~/.claude/projects/` exists and contains
-  `.jsonl` files. A fresh Claude Code install simply has little history yet.
+- **"No Claude Code login found" / "token expired"** — run `claude` once in a terminal and sign in,
+  then hit Refresh. The OAuth token expires periodically. On macOS the token lives in the Keychain.
+  *(Your local usage history below the limits still works regardless.)*
+- **Charts are empty / "No usage yet"** — that panel is expected on a brand-new Claude Code install;
+  `~/.claude/projects/` simply has no `.jsonl` sessions yet. It fills in automatically as you use Claude Code.
 - **"Could not start server… port in use"** — something's already on 8787; run with `--port 9000`.
 - **A model shows up with $0 cost** — its name isn't in `pricing.py` (a brand-new model, or
   `<synthetic>` local messages). Add it to `_BASE_PER_MTOK`.
 - **Windows shows the wrong day boundaries** — pass `--timezone "America/Chicago"` (or your zone).
-  Windows has no system timezone database, so named zones need the bundled `tzdata`.
+  Windows has no system timezone database, so named zones use the bundled `tzdata`.
 
 ---
 
@@ -218,6 +244,8 @@ PRs and issues are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run 
 pip install -e ".[dev]"
 pytest
 ```
+
+Releases (PyPI + the Pages demo) are automated — see [RELEASING.md](RELEASING.md).
 
 ## Branding
 

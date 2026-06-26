@@ -6,6 +6,7 @@ fixed UTC zone so results are identical on every machine/CI runner.
 """
 
 import json
+import os
 from datetime import timezone
 
 from portmint_pulse.transcripts import TranscriptStore, _project_label
@@ -56,6 +57,23 @@ def test_incremental_reparse_only_changed(tmp_path):
     assert store.refresh() == 1
     # No change → nothing re-parsed.
     assert store.refresh() == 0
+
+
+def test_same_mtime_append_is_reparsed(tmp_path):
+    # An append that doesn't move mtime still changes size — the store must notice.
+    projects = tmp_path / "projects"
+    f = projects / "enc" / "s.jsonl"
+    _write_jsonl(f, [_assistant("claude-opus-4-8", "2026-06-20T10:00:00Z", "/x/proj", output_tokens=10)])
+    store = TranscriptStore(tz=timezone.utc, projects_dir=str(projects))
+    assert store.refresh() == 1
+    mtime = os.path.getmtime(f)
+
+    with open(f, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(_assistant("claude-opus-4-8", "2026-06-20T10:05:00Z", "/x/proj", output_tokens=20)) + "\n")
+    os.utime(f, (mtime, mtime))  # pretend the mtime never changed
+
+    assert store.refresh() == 1  # size differs → re-parsed
+    assert store.aggregate()["lifetime"]["messages"] == 2
 
 
 def test_synthetic_model_counts_tokens_but_zero_cost(tmp_path):

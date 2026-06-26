@@ -10,7 +10,7 @@
      locally-installed Inter if present, otherwise the OS system font. This keeps
      the privacy promise — nothing leaves your machine from this page. -->
 <style>
-  /* ---- Portmint brand tokens (mirrors portmint/src/index.css & BRANDING.md) ---- */
+  /* ---- Portmint brand tokens: mint on Deep Ocean Blue ---- */
   :root{
     --mint:#34e0b3; --mint-2:#5cf0c4; --mint-deep:#2bd3a6; --sky:#0ea5e9;
     --ocean:#07182c; --ink:#070b14;
@@ -120,6 +120,10 @@
 <body>
 <div class="wrap">
 
+  <!-- Shown only when there is no usage history yet, so a fresh install never
+       looks broken (an all-zero dashboard with no explanation). -->
+  <div id="empty" style="display:none;margin-bottom:6px"></div>
+
   <header>
     <!-- The Portmint mark: a ship's porthole rendered in mint (Port + mint). -->
     <svg class="mark" viewBox="0 0 64 64" fill="none" role="img" aria-label="Portmint">
@@ -154,7 +158,7 @@
 
   <!-- KPI cards ------------------------------------------------------------->
   <section>
-    <div class="sec-head"><h2>At a glance</h2><span class="hint">America/New_York</span></div>
+    <div class="sec-head"><h2>At a glance</h2><span class="hint" id="tz-label">local time</span></div>
     <div class="grid g-3" id="kpis"></div>
   </section>
 
@@ -212,6 +216,12 @@ const fmtInt = n => (n || 0).toLocaleString();
 // Brand-aligned colour for a 0-100 utilisation: mint → amber → red.
 const limitColor = u => u >= 90 ? "var(--red)" : (u >= 70 ? "var(--amber)" : "var(--mint)");
 
+// Escape text before putting it inside innerHTML. Project names come from your
+// on-disk directory names and model names from transcripts — normally clean, but
+// we never trust them into raw HTML.
+const escapeHtml = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 // ---- hand-rolled SVG area chart (no chart library, fully offline) -----------
 function areaChart(el, points, {stroke, fill, fmt}) {
   el.innerHTML = "";
@@ -265,7 +275,12 @@ function areaChart(el, points, {stroke, fill, fmt}) {
 function renderLimits(limits) {
   const box = document.getElementById("limits");
   if (!limits || limits.error) {
-    box.innerHTML = `<div class="limit-note">⚠ ${limits ? limits.error : "Limits unavailable."}</div>`;
+    const msg = limits ? limits.error : "Limits unavailable.";
+    // Amber callout (not muted body text) + a reminder that the rest still works.
+    box.innerHTML = `<div class="limit-note" style="border:1px solid var(--amber);background:rgba(245,179,102,.08);color:var(--amber);border-radius:11px;padding:13px 15px">
+      ⚠ ${escapeHtml(msg)}
+      <div style="color:var(--muted);font-weight:500;margin-top:4px;font-size:.82rem">Your local usage history below is unaffected.</div>
+    </div>`;
     return;
   }
   let html = "";
@@ -273,7 +288,7 @@ function renderLimits(limits) {
     const u = Math.max(0, Math.min(100, w.utilization));
     html += `<div class="limit">
       <div class="limit-row">
-        <span class="lbl">${w.label}</span>
+        <span class="lbl">${escapeHtml(w.label)}</span>
         <span class="reset">${w.resets_human || ""}</span>
         <span class="pct" style="color:${limitColor(u)}">${u.toFixed(0)}%</span>
       </div>
@@ -286,7 +301,7 @@ function renderLimits(limits) {
     html += `<div class="limit">
       <div class="limit-row">
         <span class="lbl">Extra-usage credits</span>
-        <span class="reset">${cap} ${e.currency}</span>
+        <span class="reset">${cap} ${escapeHtml(e.currency)}</span>
         <span class="pct" style="color:${limitColor(u)}">${u.toFixed(0)}%</span>
       </div>
       <div class="track"><div class="fill" style="width:${u}%;background:${limitColor(u)}"></div></div>
@@ -336,10 +351,27 @@ function renderBreakdown(elId, rows, {valueKey, metaFn}) {
   el.innerHTML = rows.slice(0, 8).map(r => {
     const w = Math.max(2, (r[valueKey]/max)*100);
     return `<div class="brk-row">
-      <div class="top"><span class="name">${r.name}</span><span class="meta">${metaFn(r)}</span></div>
+      <div class="top"><span class="name">${escapeHtml(r.name)}</span><span class="meta">${metaFn(r)}</span></div>
       <div class="bar"><i style="width:${w}%"></i></div>
     </div>`;
   }).join("");
+}
+
+// A brand-new Claude Code install has no transcripts yet — a valid but all-zero
+// payload. Explain that instead of showing a silently empty dashboard.
+function renderEmptyState(d) {
+  const box = document.getElementById("empty");
+  const empty = (d.transcript_files === 0) || (d.lifetime && (d.lifetime.tokens.total || 0) === 0);
+  if (!empty) { box.style.display = "none"; box.innerHTML = ""; return; }
+  box.style.display = "";
+  box.innerHTML = `<div class="card" style="text-align:center;padding:30px 22px">
+    <div style="font-size:1.12rem;font-weight:800">No usage yet — you're all set up ✅</div>
+    <p style="color:var(--muted);max-width:580px;margin:9px auto 0;line-height:1.5">
+      Pulse is reading <code style="color:var(--mint)">~/.claude/projects</code> and found no sessions to chart yet.
+      Keep using Claude Code and this fills in automatically — the page refreshes every 60 seconds.
+      Want to see what it looks like with data? Run <code style="color:var(--mint)">python tools/gen_demo.py</code>.
+    </p>
+  </div>`;
 }
 
 // ---- load + auto-refresh ----------------------------------------------------
@@ -350,6 +382,9 @@ async function load() {
   try {
     const r = await fetch("/api/stats", {cache:"no-store"});
     const d = await r.json();
+    // Label the "At a glance" section with the timezone the days are bucketed in.
+    if (d.timezone) document.getElementById("tz-label").textContent = d.timezone;
+    renderEmptyState(d);
     renderLimits(d.limits);
     renderKpis(d);
     renderCharts(d.daily || []);

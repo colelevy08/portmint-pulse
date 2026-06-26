@@ -48,6 +48,7 @@ class _FileSummary:
     """The compact, cached digest of one transcript file."""
 
     mtime: float
+    size: int
     session_id: str
     project: str
     # by_day[day_str][model] -> _Bucket
@@ -79,10 +80,10 @@ def _project_label(cwd: str) -> str:
     return name or cwd
 
 
-def _summarise_file(path: str, mtime: float, tz: tzinfo) -> _FileSummary:
+def _summarise_file(path: str, mtime: float, size: int, tz: tzinfo) -> _FileSummary:
     """Read one transcript file and fold it down to a _FileSummary."""
     session_id = os.path.splitext(os.path.basename(path))[0]
-    summary = _FileSummary(mtime=mtime, session_id=session_id, project="(unknown)")
+    summary = _FileSummary(mtime=mtime, size=size, session_id=session_id, project="(unknown)")
     # We pick the project label from the most common working directory seen.
     cwd_counts: dict[str, int] = defaultdict(int)
 
@@ -176,12 +177,15 @@ class TranscriptStore:
                 path = os.path.join(root, name)
                 seen.add(path)
                 try:
-                    mtime = os.path.getmtime(path)
+                    st = os.stat(path)
+                    mtime, size = st.st_mtime, st.st_size
                 except OSError:
                     continue
                 cached = self._cache.get(path)
-                if cached is None or cached.mtime != mtime:
-                    self._cache[path] = _summarise_file(path, mtime, self.tz)
+                # Key on (mtime, size): an append that doesn't bump mtime still grows
+                # the file, so size catches changes a coarse mtime would miss.
+                if cached is None or cached.mtime != mtime or cached.size != size:
+                    self._cache[path] = _summarise_file(path, mtime, size, self.tz)
                     reparsed += 1
 
         # Drop cache entries for files that have been deleted.

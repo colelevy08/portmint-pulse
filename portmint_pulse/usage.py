@@ -1,16 +1,19 @@
 """Fetches your live Claude usage limits straight from the OAuth API.
 
-Claude Code stores its login token differently per platform:
-  - Linux / WSL / Windows: a JSON file at ``~/.claude/.credentials.json``
-  - macOS: the login Keychain (service "Claude Code-credentials")
+Claude Code stores its login token in a JSON file at ``~/.claude/.credentials.json``
+on Linux / WSL / Windows, and in the login Keychain (service "Claude Code-credentials")
+on macOS. We read the **file first on every platform** and fall back to the macOS
+Keychain when the file is absent or has no usable token.
 
-This module reads whichever applies, then calls Anthropic's usage endpoint with
-that token — the same call Claude Code itself makes — to learn how much of each
+With that token this module calls Anthropic's usage endpoint — the same call
+Claude Code itself makes — to learn how much of each
 rolling limit you've used: the 5-hour session window, the 7-day all-models
 window, per-model 7-day windows, and any pay-as-you-go credit balance.
 
-Everything here is read-only and runs locally. The token never leaves your
-machine except in the one HTTPS request to api.anthropic.com.
+The OAuth usage endpoint rate-limits aggressively, so results are cached for a
+short TTL and a 429 backs off while serving the last-good values rather than
+flapping the bars. Everything here is read-only and runs locally. The token
+never leaves your machine except in the one HTTPS request to api.anthropic.com.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -28,6 +32,15 @@ USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
 # macOS Keychain service name that Claude Code stores its credentials blob under.
 _MAC_KEYCHAIN_SERVICE = "Claude Code-credentials"
+
+# How long a successful result is reused before we hit the network again, and how
+# long we wait after a 429 before trying again. The dashboard polls every 60s; a
+# 90s TTL means most refreshes are served from cache, well under any rate limit.
+_TTL_SECONDS = 90.0
+_BACKOFF_SECONDS = 120.0
+
+# Cache of the last *successful* fetch, so transient errors keep showing real bars.
+_state: dict = {"good": None, "good_ts": 0.0, "backoff_until": 0.0}
 
 # Friendly labels for the rolling-limit windows the API returns. Anything not in
 # this map (or whose utilisation is null) is simply not shown.
@@ -41,42 +54,64 @@ _WINDOW_LABELS = {
 _WINDOW_ORDER = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"]
 
 
-def _read_credentials_blob() -> dict | None:
-    """Load Claude Code's credentials JSON from the file or the macOS Keychain."""
-    # 1) The plain file (Linux, WSL, and Windows installs).
+def reset_cache() -> None:
+    """Clear the in-memory limit cache (used by tests)."""
+    _state["good"] = None
+    _state["good_ts"] = 0.0
+    _state["backoff_until"] = 0.0
+
+
+def _token_from_blob(blob: object) -> str | None:
+    """Extract the OAuth access token from a parsed credentials blob, if present."""
+    if not isinstance(blob, dict):
+        return None
+    oauth = blob.get("claudeAiOauth")
+    if not isinstance(oauth, dict):
+        return None
+    tok = oauth.get("accessToken")
+    return tok if isinstance(tok, str) and tok else None
+
+
+def _read_credentials_file() -> object | None:
+    """Load the credentials JSON file (Linux / WSL / Windows), or None."""
     try:
         with open(CREDENTIALS_PATH, "r", encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _read_keychain_blob() -> object | None:
+    """Load Claude Code's credentials JSON from the macOS login Keychain, or None."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        out = subprocess.run(
+            ["security", "find-generic-password", "-s", _MAC_KEYCHAIN_SERVICE, "-w"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return json.loads(out.stdout.strip())
+    except (OSError, json.JSONDecodeError, subprocess.SubprocessError):
         pass
-
-    # 2) macOS stores the same JSON in the login Keychain instead of a file.
-    if sys.platform == "darwin":
-        try:
-            out = subprocess.run(
-                ["security", "find-generic-password", "-s", _MAC_KEYCHAIN_SERVICE, "-w"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if out.returncode == 0 and out.stdout.strip():
-                return json.loads(out.stdout.strip())
-        except (OSError, json.JSONDecodeError, subprocess.SubprocessError):
-            pass
-
     return None
 
 
 def _read_access_token() -> str | None:
-    """Pull the current OAuth access token out of the credentials blob."""
-    creds = _read_credentials_blob()
-    if not isinstance(creds, dict):
-        return None
-    oauth = creds.get("claudeAiOauth")
-    if not isinstance(oauth, dict):
-        return None
-    return oauth.get("accessToken")
+    """Return the OAuth access token from the file or macOS Keychain.
+
+    Important: we fall through to the Keychain whenever the *file* didn't yield a
+    usable token — not only when it's missing. On macOS the file can exist but be
+    tokenless (older installs), and the real token lives in the Keychain; reading
+    the file first must not shadow it.
+    """
+    tok = _token_from_blob(_read_credentials_file())
+    if tok:
+        return tok
+    return _token_from_blob(_read_keychain_blob())
 
 
 def _humanize_reset(resets_at: str | None) -> str | None:
@@ -88,7 +123,7 @@ def _humanize_reset(resets_at: str | None) -> str | None:
     except ValueError:
         return None
     delta = when - datetime.now(timezone.utc)
-    secs = int(delta.total_seconds())
+    secs = round(delta.total_seconds())
     if secs <= 0:
         return "resetting now"
     hours, rem = divmod(secs, 3600)
@@ -101,36 +136,8 @@ def _humanize_reset(resets_at: str | None) -> str | None:
     return f"resets in {minutes}m"
 
 
-def fetch_limits() -> dict:
-    """Return the parsed usage limits, or an ``error`` describing why we can't.
-
-    The shape is intentionally simple so the front-end can render it directly:
-    a list of windows (each with a 0-100 utilisation and a reset countdown) plus
-    an optional pay-as-you-go ``extra_usage`` block.
-    """
-    token = _read_access_token()
-    if not token:
-        hint = "log in with the Claude app (Keychain)" if sys.platform == "darwin" else "~/.claude/.credentials.json missing"
-        return {"error": f"No Claude Code login found ({hint})."}
-
-    req = urllib.request.Request(
-        USAGE_URL,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": "claude-code/2.0.32",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.load(resp)
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            return {"error": "Login token expired — run `claude` once to refresh it."}
-        return {"error": f"Usage API returned HTTP {e.code}."}
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-        return {"error": f"Couldn't reach the usage API ({type(e).__name__})."}
-
+def _parse_payload(data: dict) -> dict:
+    """Shape the raw usage-API response into the front-end's simple structure."""
     windows = []
     for key in _WINDOW_ORDER:
         block = data.get(key)
@@ -165,5 +172,58 @@ def fetch_limits() -> dict:
             "limit": round(limit, places) if limit is not None else None,
             "utilization": round(util, 1),
         }
+    return result
 
+
+def fetch_limits() -> dict:
+    """Return the parsed usage limits (cached), or an ``error`` describing why not.
+
+    Serves a recent successful result from cache without touching the network,
+    backs off after a 429, and on any error prefers the last-good windows over
+    flashing an error in the UI.
+    """
+    now = time.monotonic()
+    good = _state["good"]
+
+    # Fresh enough? Serve cache, no network call.
+    if good is not None and (now - _state["good_ts"]) < _TTL_SECONDS:
+        return good
+    # In a post-429 cooldown? Don't touch the network — even with no cached value
+    # yet (a first launch that got rate-limited). Serve last-good if we have it,
+    # otherwise a clear "rate-limited" message, but never re-hit the endpoint.
+    if now < _state["backoff_until"]:
+        return good if good is not None else {"error": "Usage API is rate-limiting (429) — retrying shortly."}
+
+    token = _read_access_token()
+    if not token:
+        if good is not None:
+            return good
+        hint = "run `claude` and sign in" if sys.platform == "darwin" else "run `claude` to sign in"
+        return {"error": f"No Claude Code login found — {hint}, then hit Refresh."}
+
+    req = urllib.request.Request(
+        USAGE_URL,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "claude-code/2.0.32",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.load(resp)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return good if good is not None else {"error": "Login token expired — run `claude` once to refresh it."}
+        if e.code == 429:
+            _state["backoff_until"] = now + _BACKOFF_SECONDS
+            return good if good is not None else {"error": "Usage API is rate-limiting (429) — retrying shortly."}
+        return good if good is not None else {"error": f"Usage API returned HTTP {e.code}."}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        return good if good is not None else {"error": f"Couldn't reach the usage API ({type(e).__name__})."}
+
+    result = _parse_payload(data)
+    _state["good"] = result
+    _state["good_ts"] = now
+    _state["backoff_until"] = 0.0
     return result

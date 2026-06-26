@@ -56,8 +56,9 @@ def generate(target: Path, *, days: int = 30, seed: int = 7) -> int:
         proj_dir = target / _encode_cwd(project)
         proj_dir.mkdir(parents=True, exist_ok=True)
         for day in range(days):
-            # Some days a project is idle.
-            if rng.random() < 0.35:
+            # Some days a project is idle — but always populate "today" (day 0) so
+            # the demo's Today card is never an unflattering $0.00.
+            if day != 0 and rng.random() < 0.35:
                 continue
             sessions = rng.randint(1, 3)
             for s in range(sessions):

@@ -58,12 +58,17 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        # A browser closing a tab mid-response is normal and would otherwise dump a
+        # multi-line traceback to the console; swallow just those disconnects.
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     def do_GET(self) -> None:  # noqa: N802 (http.server naming)
         path = self.path.split("?", 1)[0]
@@ -83,7 +88,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.store.refresh()
             data = self.store.aggregate()
         data["limits"] = usage.fetch_limits()
-        data["generated_at"] = datetime.now(self.tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+        now = datetime.now(self.tz)
+        data["timezone"] = now.strftime("%Z") or "local time"
+        data["generated_at"] = now.strftime("%Y-%m-%d %H:%M:%S %Z")
         body = json.dumps(data).encode("utf-8")
         self._send(200, body, "application/json; charset=utf-8")
 

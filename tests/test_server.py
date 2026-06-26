@@ -33,7 +33,7 @@ def test_endpoints_serve(tmp_path, monkeypatch):
         assert favicon.headers.get("Content-Type") == "image/svg+xml"
 
         stats = json.loads(urllib.request.urlopen(base + "/api/stats", timeout=5).read())
-        for key in ("today", "week", "lifetime", "daily", "models", "projects", "limits", "generated_at"):
+        for key in ("today", "week", "lifetime", "daily", "models", "projects", "limits", "generated_at", "timezone"):
             assert key in stats
         assert len(stats["daily"]) == 30
     finally:

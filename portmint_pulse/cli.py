@@ -81,6 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     tz = resolve_timezone(args.timezone or os.environ.get("PULSE_TIMEZONE"))
     projects_dir = args.projects_dir or os.environ.get("PULSE_PROJECTS_DIR") or PROJECTS_DIR
 
+    # Binding to anything but loopback exposes your project names + full usage to
+    # the network with no authentication — make that loud, not a footnote.
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"  WARNING: binding {args.host} exposes your project names and usage to "
+            f"everyone on this network — there is no authentication.",
+            file=sys.stderr,
+        )
+
     color = _supports_color()
     mint = "\033[38;2;52;224;179m" if color else ""
     dim = "\033[2m" if color else ""

@@ -13,7 +13,16 @@ All the real logic lives in the ``portmint_pulse`` package (entry point
 who cloned the repo instead of running ``pip install``.
 """
 
-from portmint_pulse.cli import main
+import sys
+
+# Fail fast with a clear message instead of a confusing ImportError deep in the
+# stdlib (zoneinfo / importlib.resources.files are both 3.9+).
+if sys.version_info < (3, 9):
+    raise SystemExit(
+        "Portmint Pulse needs Python 3.9 or newer (found %d.%d)." % sys.version_info[:2]
+    )
+
+from portmint_pulse.cli import main  # noqa: E402  (guarded import below the check)
 
 if __name__ == "__main__":
     raise SystemExit(main())

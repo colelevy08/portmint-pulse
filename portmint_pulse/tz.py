@@ -15,6 +15,7 @@ Windows dependency) and fall back gracefully if it still can't be found.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timezone, tzinfo
 
@@ -41,12 +42,53 @@ def resolve_timezone(name: str | None) -> tzinfo:
     return _local_timezone()
 
 
-def _local_timezone() -> tzinfo:
-    """The system's current local timezone as a fixed-offset tzinfo.
+def _detect_iana_name() -> str | None:
+    """Best-effort discovery of the system IANA timezone name on POSIX.
 
-    ``datetime.now().astimezone()`` attaches the OS local zone (with the right
-    abbreviation for ``%Z``) without touching the IANA database, so it is safe on
-    a bare Windows install. We guard against the rare ``None`` with a UTC default.
+    Prefers the ``TZ`` env var, then resolves the ``/etc/localtime`` symlink
+    (e.g. ``/usr/share/zoneinfo/America/New_York`` → ``America/New_York``). Returns
+    None on Windows or when nothing is discoverable.
     """
+    tzenv = os.environ.get("TZ")
+    if tzenv and "/" in tzenv and not any(c.isdigit() for c in tzenv):
+        # A path-like TZ is an IANA name; a POSIX rule like "EST5EDT,M3.2.0" has
+        # digits and isn't one — skip those (ZoneInfo would reject them anyway).
+        return tzenv.lstrip(":")
+    try:
+        target = os.readlink("/etc/localtime")
+        marker = "zoneinfo/"
+        idx = target.find(marker)
+        if idx != -1:
+            return target[idx + len(marker):]
+    except (OSError, ValueError):
+        pass
+    # Debian/Ubuntu/WSL keep the name here even when /etc/localtime is a plain copy.
+    try:
+        with open("/etc/timezone", encoding="utf-8") as fh:
+            name = fh.read().strip()
+            if name and "/" in name:
+                return name
+    except OSError:
+        pass
+    return None
+
+
+def _local_timezone() -> tzinfo:
+    """The system's current local timezone.
+
+    On POSIX we resolve the real IANA zone so day bucketing stays correct across a
+    DST transition within the 30-day window (a single frozen offset would be wrong
+    on one side of the boundary). If the IANA name can't be found — notably on a
+    bare Windows install with no timezone database — we fall back to
+    ``datetime.now().astimezone()``, a fixed-offset zone that still works everywhere.
+    """
+    name = _detect_iana_name()
+    if name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            return ZoneInfo(name)
+        except Exception:
+            pass
     local = datetime.now().astimezone().tzinfo
     return local if local is not None else timezone.utc
