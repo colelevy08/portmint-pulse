@@ -14,12 +14,17 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from portmint_pulse import usage
-from portmint_pulse.server import build_server
+# Make the package importable when run as `python tools/gen_demo.py` from a bare
+# checkout (running a script puts tools/ — not the repo root — on sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from portmint_pulse import usage  # noqa: E402  (path set above)
+from portmint_pulse.server import build_server  # noqa: E402
 
 # Fabricated projects and the models they tend to use, with rough weightings.
 _PROJECTS = ["acme-storefront", "billing-service", "ml-pipeline", "marketing-site", "infra-scripts"]
@@ -119,7 +124,7 @@ def main() -> int:
     usage.fetch_limits = lambda: _DEMO_LIMITS  # type: ignore[assignment]
 
     httpd = build_server(args.host, args.port, tz=timezone.utc, projects_dir=str(tmp))
-    print(f"Demo live at http://{args.host}:{args.port}  (Ctrl+C to stop)")
+    print(f"Demo live at http://{args.host}:{args.port}  (Ctrl+C to stop)", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -1,7 +1,8 @@
 """Portmint Pulse — a local Claude Code usage dashboard, branded Portmint.
 
-Pure Python standard library: no pip install, no build step. Run it and open
-the page in your browser. See ``app.py`` for the entry point.
+Pure Python standard library (only ``tzdata`` is pulled in on Windows). Install it
+with ``pipx``/``uv``/``pip`` to get the ``portmint-pulse`` command, or run it from a
+checkout with ``python3 app.py``. The CLI entry point is ``portmint_pulse.cli:main``.
 """
 
 __version__ = "1.0.0"

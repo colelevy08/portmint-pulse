@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Portmint Pulse — Claude Code usage</title>
+<meta name="description" content="A private, local dashboard for your Claude Code usage — live limit windows, token & cost trends, and per-model/per-project breakdowns." />
 <meta name="theme-color" content="#070b14" />
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <!-- No web fonts are fetched: the page makes zero outbound requests. We use a
@@ -53,12 +54,13 @@
   button.refresh:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(52,224,179,.30)}
   button.refresh:active{transform:translateY(0)}
   button.refresh[disabled]{opacity:.6;cursor:progress}
+  button.refresh:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 4px rgba(52,224,179,.45)}
 
   /* ---- Section scaffolding ---- */
   section{margin-top:26px}
   .sec-head{display:flex;align-items:baseline;gap:10px;margin:0 2px 12px}
   .sec-head h2{font-size:.82rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0}
-  .sec-head .hint{color:var(--line2);font-size:.76rem}
+  .sec-head .hint{color:var(--muted);font-size:.76rem}
 
   .card{
     background:linear-gradient(180deg,var(--card),var(--bg2));
@@ -104,7 +106,7 @@
   /* ---- Breakdown lists (models / projects) ---- */
   .brk{display:flex;flex-direction:column;gap:13px}
   .brk-row .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:5px}
-  .brk-row .name{font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .brk-row .name{font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
   .brk-row .meta{color:var(--muted);font-size:.76rem;font-variant-numeric:tabular-nums;flex:0 0 auto}
   .brk-row .meta b{color:var(--text);font-weight:700}
   .bar{height:8px;border-radius:99px;background:#0c1424;border:1px solid var(--line);overflow:hidden}
@@ -115,6 +117,10 @@
     display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:.78rem}
   footer a{color:var(--mint);text-decoration:none;font-weight:600}
   .skel{color:var(--muted)}
+  /* Respect users who ask for less motion: drop the bar/hover animations. */
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  }
 </style>
 </head>
 <body>
@@ -194,7 +200,7 @@
   <footer>
     <div>
       Portmint Pulse · <span id="filecount">—</span> sessions indexed · <a href="https://portmint.com" target="_blank" rel="noopener">portmint.com</a><br>
-      <span style="color:var(--line2)">Costs are equivalent API list-price estimates — not your actual subscription billing.</span>
+      <span style="color:var(--muted)">Costs are equivalent API list-price estimates — not your actual subscription billing.</span>
     </div>
     <div id="gen">—</div>
   </footer>
@@ -285,11 +291,15 @@ function renderLimits(limits) {
   }
   let html = "";
   (limits.windows || []).forEach(w => {
-    const u = Math.max(0, Math.min(100, w.utilization));
+    // Coerce a missing/garbage utilization to 0 so we never render "NaN%".
+    const raw = Number(w.utilization);
+    const u = Math.max(0, Math.min(100, Number.isFinite(raw) ? raw : 0));
+    // A non-colour severity cue (so it doesn't rely on hue alone).
+    const cue = u >= 90 ? ` · over` : (u >= 70 ? ` · near limit` : "");
     html += `<div class="limit">
       <div class="limit-row">
         <span class="lbl">${escapeHtml(w.label)}</span>
-        <span class="reset">${w.resets_human || ""}</span>
+        <span class="reset">${escapeHtml(w.resets_human || "")}${cue}</span>
         <span class="pct" style="color:${limitColor(u)}">${u.toFixed(0)}%</span>
       </div>
       <div class="track"><div class="fill" style="width:${u}%;background:${limitColor(u)}"></div></div>
@@ -324,7 +334,8 @@ function kpiCard(title, block, {accent} = {}) {
 }
 
 function renderKpis(d) {
-  const today = d.today, week = d.week, life = d.lifetime;
+  // Default each block so a partial payload never throws and blanks the page.
+  const today = d.today || {}, week = d.week || {}, life = d.lifetime || {};
   const firstSeen = life.first_session_date ? ` · since ${life.first_session_date}` : "";
   document.getElementById("kpis").innerHTML =
     kpiCard(`Today · ${today.date}`, today, {accent:true}) +

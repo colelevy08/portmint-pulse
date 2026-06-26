@@ -50,9 +50,10 @@ def _detect_iana_name() -> str | None:
     None on Windows or when nothing is discoverable.
     """
     tzenv = os.environ.get("TZ")
-    if tzenv and "/" in tzenv and not any(c.isdigit() for c in tzenv):
-        # A path-like TZ is an IANA name; a POSIX rule like "EST5EDT,M3.2.0" has
-        # digits and isn't one — skip those (ZoneInfo would reject them anyway).
+    if tzenv and "/" in tzenv:
+        # A path-like TZ value is an IANA name (including the Etc/GMT±N family).
+        # A POSIX rule like "EST5EDT,M3.2.0/2" can also contain "/", but ZoneInfo
+        # will simply reject it and the caller falls back — so don't over-filter.
         return tzenv.lstrip(":")
     try:
         target = os.readlink("/etc/localtime")

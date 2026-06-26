@@ -103,8 +103,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     url = f"http://{args.host}:{args.port}"
-    print(f"\n  {mint}Ψ Portmint Pulse{reset} is live at {mint}{url}{reset}")
-    print(f"  {dim}Press Ctrl+C to stop.{reset}\n")
+    # flush=True so the URL appears even when output is redirected/backgrounded
+    # (the README shows `( portmint-pulse --no-browser & )`), matching server.py.
+    print(f"\n  {mint}Ψ Portmint Pulse{reset} is live at {mint}{url}{reset}", flush=True)
+    print(f"  {dim}Press Ctrl+C to stop.{reset}\n", flush=True)
 
     if not args.no_browser:
         # Open the tab a beat after the server is actually accepting connections.

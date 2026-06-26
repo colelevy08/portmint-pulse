@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" width="84" alt="Portmint Pulse" />
+<img src="https://raw.githubusercontent.com/colelevy08/portmint-pulse/main/assets/logo.svg" width="84" alt="Portmint Pulse" />
 
 # Portmint&nbsp;Pulse
 
@@ -13,12 +13,12 @@ per-project breakdowns, and 30-day trend charts.
 *Pure Python standard library. No build step. No cloud. No telemetry. Runs on macOS, Windows, and Linux/WSL.*
 
 [![CI](https://github.com/colelevy08/portmint-pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/colelevy08/portmint-pulse/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-34e0b3.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-34e0b3.svg)](https://github.com/colelevy08/portmint-pulse/blob/main/LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-2bd3a6.svg)](https://www.python.org/downloads/)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-0ea5e9.svg)](#install)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-5cf0c4.svg)](CONTRIBUTING.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-5cf0c4.svg)](https://github.com/colelevy08/portmint-pulse/blob/main/CONTRIBUTING.md)
 
-<img src="assets/screenshot.png" width="860" alt="Portmint Pulse dashboard" />
+<img src="https://raw.githubusercontent.com/colelevy08/portmint-pulse/main/assets/screenshot.png" width="860" alt="Portmint Pulse dashboard" />
 
 ### ▶ **[Try the live demo →](https://colelevy08.github.io/portmint-pulse/)**  ·  no install, runs in your browser on fabricated data
 
@@ -33,7 +33,7 @@ Most tools that do are either terminal-only, macOS-only, or need a Node toolchai
 a **visual browser dashboard** computed from the raw data Claude Code already writes locally — no
 Apple frameworks, no observability stack, no `npm`, no database, nothing to set up.
 
-| | Portmint Pulse | claude-pulseinator | ccusage |
+| | Portmint Pulse | [claude-pulseinator](https://github.com/mikelane/claude-pulseinator) | [ccusage](https://github.com/ryoppippi/ccusage) |
 |---|---|---|---|
 | Form | **web dashboard** (charts, gauges) | macOS menubar | CLI text reports |
 | Runs on macOS / Windows / Linux | **✅ / ✅ / ✅** | ✅ / ❌ / ❌ | ✅ / ✅ / ✅ |
@@ -238,14 +238,14 @@ python tools/gen_demo.py     # serves a dashboard on fabricated data at http://1
 
 ## Contributing
 
-PRs and issues are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run the tests with:
+PRs and issues are very welcome — see [CONTRIBUTING.md](https://github.com/colelevy08/portmint-pulse/blob/main/CONTRIBUTING.md). Run the tests with:
 
 ```bash
 pip install -e ".[dev]"
 pytest
 ```
 
-Releases (PyPI + the Pages demo) are automated — see [RELEASING.md](RELEASING.md).
+Releases (PyPI + the Pages demo) are automated — see [RELEASING.md](https://github.com/colelevy08/portmint-pulse/blob/main/RELEASING.md).
 
 ## Branding
 
@@ -254,6 +254,6 @@ Portmint Ink (`#070b14`) surfaces, the mint→sky brand gradient, and Inter thro
 
 ## License
 
-[MIT](LICENSE) — do whatever you like with it.
+[MIT](https://github.com/colelevy08/portmint-pulse/blob/main/LICENSE) — do whatever you like with it.
 
 <div align="center"><sub>Made by <a href="https://github.com/colelevy08">Cole Levy</a> · a <a href="https://portmint.com">Portmint</a> open-source project</sub></div>

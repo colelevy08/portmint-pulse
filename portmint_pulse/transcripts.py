@@ -23,7 +23,7 @@ import json
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from . import pricing
 
@@ -57,15 +57,40 @@ class _FileSummary:
     last_ts: datetime | None = None
 
 
-def _parse_ts(raw: str) -> datetime | None:
-    """Parse an ISO-8601 timestamp (the transcripts use a trailing 'Z')."""
-    if not raw:
+def _parse_ts(raw: object) -> datetime | None:
+    """Parse an ISO-8601 timestamp (the transcripts use a trailing 'Z').
+
+    Always returns a timezone-AWARE datetime — if the string carries no offset we
+    assume UTC — so a file that mixes naive and aware records never blows up on a
+    comparison. Non-string input returns None rather than raising.
+    """
+    if not isinstance(raw, str) or not raw:
         return None
     try:
         # fromisoformat handles offsets; normalise the Zulu suffix first.
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _as_int(value: object) -> int:
+    """Coerce a token count to int, treating missing/None/garbage as 0.
+
+    Transcripts are files we don't control; a stray ``null``, string, or list in a
+    token field must not crash the whole scan. Only the sensibly-numeric shapes
+    (int/float/numeric-string) convert; everything else becomes 0.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — count it as a number
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value or 0)
+        except ValueError:
+            return 0
+    return 0
 
 
 def _project_label(cwd: str) -> str:
@@ -100,52 +125,65 @@ def _summarise_file(path: str, mtime: float, size: int, tz: tzinfo) -> _FileSumm
                     # skip it rather than failing the whole file.
                     continue
 
+                # A JSON line that isn't an object (rare, but it's a file we don't
+                # control) has no .get — skip it rather than crash.
+                if not isinstance(obj, dict):
+                    continue
+
                 cwd = obj.get("cwd")
-                if cwd:
+                if isinstance(cwd, str) and cwd:
                     cwd_counts[cwd] += 1
 
                 if obj.get("type") != "assistant":
                     continue
 
-                ts = _parse_ts(obj.get("timestamp", ""))
-                if ts is None:
+                # One malformed assistant record must never blank the whole
+                # dashboard — process it defensively and skip on any bad shape.
+                try:
+                    ts = _parse_ts(obj.get("timestamp", ""))
+                    if ts is None:
+                        continue
+                    if summary.first_ts is None or ts < summary.first_ts:
+                        summary.first_ts = ts
+                    if summary.last_ts is None or ts > summary.last_ts:
+                        summary.last_ts = ts
+
+                    msg = obj.get("message")
+                    msg = msg if isinstance(msg, dict) else {}
+                    usage = msg.get("usage")
+                    usage = usage if isinstance(usage, dict) else {}
+                    model = msg.get("model")
+
+                    # Pull the token counts, defaulting anything missing/garbage to 0.
+                    inp = _as_int(usage.get("input_tokens"))
+                    out = _as_int(usage.get("output_tokens"))
+                    cr = _as_int(usage.get("cache_read_input_tokens"))
+                    # Prefer the precise 5m/1h split when present; otherwise treat the
+                    # lump-sum cache-creation total as a 5-minute write.
+                    cc = usage.get("cache_creation")
+                    cc = cc if isinstance(cc, dict) else {}
+                    cw5 = _as_int(cc.get("ephemeral_5m_input_tokens"))
+                    cw1 = _as_int(cc.get("ephemeral_1h_input_tokens"))
+                    if cw5 == 0 and cw1 == 0:
+                        cw5 = _as_int(usage.get("cache_creation_input_tokens"))
+
+                    day = ts.astimezone(tz).strftime("%Y-%m-%d")
+                    day_models = summary.by_day.setdefault(day, {})
+                    bucket = day_models.setdefault(model if isinstance(model, str) else "(none)", _Bucket())
+                    bucket.messages += 1
+                    bucket.input += inp
+                    bucket.output += out
+                    bucket.cache_read += cr
+                    bucket.cache_write_5m += cw5
+                    bucket.cache_write_1h += cw1
+                except (ValueError, TypeError, AttributeError):
                     continue
-                if summary.first_ts is None or ts < summary.first_ts:
-                    summary.first_ts = ts
-                if summary.last_ts is None or ts > summary.last_ts:
-                    summary.last_ts = ts
-
-                msg = obj.get("message", {}) or {}
-                usage = msg.get("usage", {}) or {}
-                model = msg.get("model")
-
-                # Pull the token counts, defaulting anything missing to zero.
-                inp = int(usage.get("input_tokens", 0) or 0)
-                out = int(usage.get("output_tokens", 0) or 0)
-                cr = int(usage.get("cache_read_input_tokens", 0) or 0)
-                # Prefer the precise 5m/1h split when present; otherwise treat the
-                # lump-sum cache-creation total as a 5-minute write.
-                cc = usage.get("cache_creation", {}) or {}
-                cw5 = int(cc.get("ephemeral_5m_input_tokens", 0) or 0)
-                cw1 = int(cc.get("ephemeral_1h_input_tokens", 0) or 0)
-                if cw5 == 0 and cw1 == 0:
-                    cw5 = int(usage.get("cache_creation_input_tokens", 0) or 0)
-
-                day = ts.astimezone(tz).strftime("%Y-%m-%d")
-                day_models = summary.by_day.setdefault(day, {})
-                bucket = day_models.setdefault(model or "(none)", _Bucket())
-                bucket.messages += 1
-                bucket.input += inp
-                bucket.output += out
-                bucket.cache_read += cr
-                bucket.cache_write_5m += cw5
-                bucket.cache_write_1h += cw1
     except OSError:
         # File vanished or is unreadable — return whatever we have.
         return summary
 
     if cwd_counts:
-        top_cwd = max(cwd_counts, key=cwd_counts.get)
+        top_cwd = max(cwd_counts, key=lambda c: cwd_counts[c])
         summary.project = _project_label(top_cwd)
     return summary
 
@@ -220,9 +258,9 @@ class TranscriptStore:
             if summary.first_ts is not None:
                 if first_ts is None or summary.first_ts < first_ts:
                     first_ts = summary.first_ts
-            for day, models in summary.by_day.items():
+            for day, model_buckets in summary.by_day.items():
                 all_active_days.add(day)
-                for model, b in models.items():
+                for model, b in model_buckets.items():
                     total = (
                         b.input + b.output + b.cache_read + b.cache_write_5m + b.cache_write_1h
                     )
@@ -305,14 +343,14 @@ class TranscriptStore:
         daily = []
         for i in range(29, -1, -1):
             d = (now - timedelta(days=i)).strftime("%Y-%m-%d")
-            dt = day_tokens.get(d)
-            if dt:
-                tokens = dt["input"] + dt["output"] + dt["cache_read"] + dt["cache_write"]
+            day_row = day_tokens.get(d)
+            if day_row:
+                tokens = day_row["input"] + day_row["output"] + day_row["cache_read"] + day_row["cache_write"]
                 daily.append({
                     "date": d,
                     "tokens": tokens,
                     "cost": round(day_cost[d], 4),
-                    "messages": dt["messages"],
+                    "messages": day_row["messages"],
                 })
             else:
                 daily.append({"date": d, "tokens": 0, "cost": 0.0, "messages": 0})

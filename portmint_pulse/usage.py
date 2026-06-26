@@ -133,7 +133,9 @@ def _humanize_reset(resets_at: str | None) -> str | None:
         return f"resets in {days}d {hours}h"
     if hours:
         return f"resets in {hours}h {minutes}m"
-    return f"resets in {minutes}m"
+    if minutes:
+        return f"resets in {minutes}m"
+    return "resets in <1m"
 
 
 def _parse_payload(data: dict) -> dict:
@@ -159,7 +161,10 @@ def _parse_payload(data: dict) -> dict:
     # Pay-as-you-go overage credits, if the account has them enabled.
     extra = data.get("extra_usage")
     if isinstance(extra, dict) and extra.get("is_enabled"):
-        places = extra.get("decimal_places", 2) or 0
+        # Distinguish a missing/null decimal_places (default to 2) from a real 0,
+        # so a null never silently mis-scales the dollar amount by 100×.
+        dp = extra.get("decimal_places")
+        places = dp if isinstance(dp, int) and dp >= 0 else 2
         scale = 10 ** places
         limit_raw = extra.get("monthly_limit")
         used_raw = extra.get("used_credits")
