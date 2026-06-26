@@ -8,7 +8,7 @@
 
 A private, local-first dashboard for everything Claude Code is doing on this machine —
 live rate-limit windows, daily / weekly / lifetime token & cost, per-model and
-per-project breakdowns, and 30-day trend charts.
+per-project breakdowns, and trend charts spanning a day up to 5 years.
 
 *Pure Python standard library. No build step. No cloud. No telemetry. Runs on macOS, Windows, and Linux/WSL.*
 
@@ -59,9 +59,11 @@ Apple frameworks, no observability stack, no `npm`, no database, nothing to set 
   the 7-day all-models window, the 7-day Opus and Sonnet windows, and any pay-as-you-go credit balance.
   Bars go mint → amber → red with reset countdowns.
 - **At a glance** — Today / This week / Lifetime cards: estimated cost, tokens, messages, sessions.
-- **Last 30 days** — tokens-per-day and cost-per-day area charts (hand-drawn SVG, hover for exact values).
-- **By model** — lifetime tokens & cost per Claude model, ranked by spend.
-- **By project** — lifetime tokens & cost per working directory, ranked by spend.
+- **Usage over time** — a **range selector** (Day · Week · Month · 3M · 6M · Year · **up to 5 years**)
+  drives the tokens & cost area charts, which auto-bucket to fit the window — **hourly** for a single
+  day, daily, weekly, then **monthly** for multi-year views (hand-drawn SVG, hover for exact values).
+- **By model** / **By project** — tokens & cost per Claude model / working directory for the selected
+  range, ranked by spend.
 
 Auto-refreshes every 60 seconds; manual **Refresh** button in the header. Days are bucketed in **your
 machine's local timezone** by default (`--timezone` to override).

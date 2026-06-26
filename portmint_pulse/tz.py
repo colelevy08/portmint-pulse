@@ -77,9 +77,10 @@ def _detect_iana_name() -> str | None:
 def _local_timezone() -> tzinfo:
     """The system's current local timezone.
 
-    On POSIX we resolve the real IANA zone so day bucketing stays correct across a
-    DST transition within the 30-day window (a single frozen offset would be wrong
-    on one side of the boundary). If the IANA name can't be found — notably on a
+    On POSIX we resolve the real IANA zone so day bucketing stays correct across any
+    DST transition within the charted window (which spans up to 5 years) — a single
+    frozen offset would be wrong on one side of a boundary. If the IANA name can't
+    be found — notably on a
     bare Windows install with no timezone database — we fall back to
     ``datetime.now().astimezone()``, a fixed-offset zone that still works everywhere.
     """

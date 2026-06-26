@@ -56,6 +56,17 @@
   button.refresh[disabled]{opacity:.6;cursor:progress}
   button.refresh:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 4px rgba(52,224,179,.45)}
 
+  /* ---- Time-range selector ---- */
+  .ranges{margin-left:auto;display:inline-flex;gap:4px;background:#0c1424;border:1px solid var(--line);
+    border-radius:11px;padding:3px}
+  .range-btn{appearance:none;border:0;cursor:pointer;border-radius:8px;padding:6px 11px;
+    font-family:inherit;font-weight:700;font-size:.78rem;color:var(--muted);background:transparent;
+    transition:background .12s ease, color .12s ease}
+  .range-btn:hover{color:var(--text)}
+  .range-btn.active{color:#03130d;background:var(--brand-grad)}
+  .range-btn:focus-visible{outline:2px solid var(--mint);outline-offset:1px}
+  @media(max-width:560px){.ranges{margin-left:0;flex-wrap:wrap}}
+
   /* ---- Section scaffolding ---- */
   section{margin-top:26px}
   .sec-head{display:flex;align-items:baseline;gap:10px;margin:0 2px 12px}
@@ -168,16 +179,20 @@
     <div class="grid g-3" id="kpis"></div>
   </section>
 
-  <!-- Charts ---------------------------------------------------------------->
+  <!-- Trend over time (range-selectable, up to 5 years) -------------------->
   <section>
-    <div class="sec-head"><h2>Last 30 days</h2><span class="hint">computed from your session transcripts</span></div>
+    <div class="sec-head">
+      <h2>Usage over time</h2>
+      <span class="hint" id="range-sub">—</span>
+      <div class="ranges" id="ranges" role="group" aria-label="Time range"></div>
+    </div>
     <div class="grid g-2">
       <div class="card chart-card">
-        <h3>Tokens / day</h3><div class="csub" id="tokens-sub">—</div>
+        <h3>Tokens</h3><div class="csub" id="tokens-sub">—</div>
         <div class="chart" id="chart-tokens"></div>
       </div>
       <div class="card chart-card">
-        <h3>Estimated cost / day</h3><div class="csub" id="cost-sub">—</div>
+        <h3>Estimated cost</h3><div class="csub" id="cost-sub">—</div>
         <div class="chart" id="chart-cost"></div>
       </div>
     </div>
@@ -187,11 +202,11 @@
   <section>
     <div class="grid g-2">
       <div class="card">
-        <div class="sec-head" style="margin-bottom:14px"><h2>By model</h2><span class="hint">lifetime, by cost</span></div>
+        <div class="sec-head" style="margin-bottom:14px"><h2>By model</h2><span class="hint" id="models-sub">by cost</span></div>
         <div class="brk" id="models"></div>
       </div>
       <div class="card">
-        <div class="sec-head" style="margin-bottom:14px"><h2>By project</h2><span class="hint">lifetime, by cost</span></div>
+        <div class="sec-head" style="margin-bottom:14px"><h2>By project</h2><span class="hint" id="projects-sub">by cost</span></div>
         <div class="brk" id="projects"></div>
       </div>
     </div>
@@ -231,6 +246,7 @@ const escapeHtml = s => String(s == null ? "" : s).replace(/[&<>"']/g,
 // ---- hand-rolled SVG area chart (no chart library, fully offline) -----------
 function areaChart(el, points, {stroke, fill, fmt}) {
   el.innerHTML = "";
+  if (!points || !points.length) return;   // nothing to draw (defensive)
   const W = 600, H = 160, pad = {t:12,r:8,b:16,l:8};
   const vals = points.map(p => p.v);
   const max = Math.max(1, ...vals);
@@ -343,16 +359,29 @@ function renderKpis(d) {
     kpiCard(`Lifetime${firstSeen}`, life);
 }
 
-function renderCharts(daily) {
-  const labels = daily.map(p => p.date.slice(5));     // MM-DD
-  const tokPts = daily.map((p,i) => ({v:p.tokens, label:labels[i]}));
-  const cosPts = daily.map((p,i) => ({v:p.cost,   label:labels[i]}));
-  const tokSum = daily.reduce((a,p)=>a+p.tokens,0);
-  const cosSum = daily.reduce((a,p)=>a+p.cost,0);
-  document.getElementById("tokens-sub").textContent = `${fmtTokens(tokSum)} tokens over 30 days`;
-  document.getElementById("cost-sub").textContent = `${fmtCost(cosSum)} over 30 days`;
+function renderCharts(series) {
+  series = series || [];
+  const tokPts = series.map(p => ({v:p.tokens, label:p.label}));
+  const cosPts = series.map(p => ({v:p.cost,   label:p.label}));
+  const tokSum = series.reduce((a,p)=>a+p.tokens,0);
+  const cosSum = series.reduce((a,p)=>a+p.cost,0);
+  document.getElementById("tokens-sub").textContent = `${fmtTokens(tokSum)} tokens`;
+  document.getElementById("cost-sub").textContent = fmtCost(cosSum);
   areaChart(document.getElementById("chart-tokens"), tokPts, {stroke:"#34e0b3", fill:"#34e0b3", fmt:fmtTokens});
   areaChart(document.getElementById("chart-cost"),   cosPts, {stroke:"#0ea5e9", fill:"#0ea5e9", fmt:fmtCost});
+}
+
+// The time-range selector (largest → smallest window). Drives the trend charts,
+// the period summary, and the by-model / by-project breakdowns.
+const RANGE_OPTS = [
+  ["day","Day"], ["week","Week"], ["month","Month"],
+  ["3month","3M"], ["6month","6M"], ["year","Year"], ["5year","5Y"],
+];
+let currentRange = "month";
+function renderRanges() {
+  document.getElementById("ranges").innerHTML = RANGE_OPTS.map(([k,l]) =>
+    `<button type="button" class="range-btn${k===currentRange?" active":""}" data-range="${k}"${k===currentRange?' aria-current="true"':""}>${l}</button>`
+  ).join("");
 }
 
 function renderBreakdown(elId, rows, {valueKey, metaFn}) {
@@ -391,14 +420,19 @@ async function load() {
   const btn = document.getElementById("refresh");
   btn.disabled = true; btn.textContent = "Refreshing…";
   try {
-    const r = await fetch("/api/stats", {cache:"no-store"});
+    const r = await fetch(`/api/stats?range=${encodeURIComponent(currentRange)}`, {cache:"no-store"});
     const d = await r.json();
     // Label the "At a glance" section with the timezone the days are bucketed in.
     if (d.timezone) document.getElementById("tz-label").textContent = d.timezone;
     renderEmptyState(d);
     renderLimits(d.limits);
     renderKpis(d);
-    renderCharts(d.daily || []);
+    renderCharts(d.series || []);
+    // The period label scopes the trend + breakdown sections to the chosen range.
+    const periodLabel = (d.period && d.period.label) || "";
+    document.getElementById("range-sub").textContent = periodLabel;
+    document.getElementById("models-sub").textContent = periodLabel ? `${periodLabel} · by cost` : "by cost";
+    document.getElementById("projects-sub").textContent = periodLabel ? `${periodLabel} · by cost` : "by cost";
     renderBreakdown("models", d.models, {
       valueKey:"cost",
       metaFn:r => `<b>${fmtCost(r.cost)}</b> · ${fmtTokens(r.tokens)}`
@@ -418,6 +452,22 @@ async function load() {
   }
 }
 document.getElementById("refresh").addEventListener("click", load);
+// Range selector: switch the window and reload (the chart, period, and breakdowns
+// all rescope server-side). Auto-refresh keeps whatever range is selected.
+document.getElementById("ranges").addEventListener("click", (e) => {
+  const b = e.target.closest(".range-btn");
+  if (!b || b.dataset.range === currentRange) return;
+  currentRange = b.dataset.range;
+  // Update active state in place (not innerHTML) so keyboard focus stays on the
+  // button the user just activated.
+  document.querySelectorAll("#ranges .range-btn").forEach(x => {
+    const on = x.dataset.range === currentRange;
+    x.classList.toggle("active", on);
+    if (on) x.setAttribute("aria-current", "true"); else x.removeAttribute("aria-current");
+  });
+  load();
+});
+renderRanges();
 load();
 setInterval(load, 60000);
 </script>

@@ -33,9 +33,18 @@ def test_endpoints_serve(tmp_path, monkeypatch):
         assert favicon.headers.get("Content-Type") == "image/svg+xml"
 
         stats = json.loads(urllib.request.urlopen(base + "/api/stats", timeout=5).read())
-        for key in ("today", "week", "lifetime", "daily", "models", "projects", "limits", "generated_at", "timezone"):
+        for key in ("today", "week", "lifetime", "range", "period", "series", "models", "projects", "limits", "generated_at", "timezone"):
             assert key in stats
-        assert len(stats["daily"]) == 30
+        assert stats["range"] == "month"  # default
+        assert len(stats["series"]) == 30  # 30 daily buckets
+
+        # The ?range query param scopes the trend.
+        wk = json.loads(urllib.request.urlopen(base + "/api/stats?range=week", timeout=5).read())
+        assert wk["range"] == "week"
+        assert len(wk["series"]) == 7
+        day = json.loads(urllib.request.urlopen(base + "/api/stats?range=day", timeout=5).read())
+        assert day["range"] == "day"
+        assert len(day["series"]) == 24  # hourly
     finally:
         httpd.shutdown()
         thread.join(timeout=5)

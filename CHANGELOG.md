@@ -9,8 +9,12 @@ All notable changes to Portmint Pulse are documented here. The format follows
 First public release.
 
 ### Added
-- Local Claude Code usage dashboard: live limit windows, Today/Week/Lifetime cards, 30-day token &
-  cost trend charts, and per-model / per-project breakdowns.
+- Local Claude Code usage dashboard: live limit windows, Today/Week/Lifetime cards, token & cost
+  trend charts, and per-model / per-project breakdowns.
+- **Selectable time range** (Day · Week · Month · 3M · 6M · Year · up to **5 years**) driving the trend
+  charts, the period summary, and the breakdowns. The chart auto-buckets to the window — **hourly** for
+  the Day view (read on demand), daily, weekly, then **monthly** for multi-year views. Served via
+  `/api/stats?range=<key>`.
 - Cross-platform support for **macOS, Windows, and Linux/WSL**:
   - Credentials read from the `~/.claude/.credentials.json` file on all platforms, with the macOS
     login **Keychain** as the fallback when the file is absent or has no usable token.

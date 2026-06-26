@@ -18,6 +18,7 @@ import threading
 from datetime import datetime, tzinfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
+from urllib.parse import parse_qs, urlparse
 
 from . import usage
 from .transcripts import PROJECTS_DIR, TranscriptStore
@@ -82,11 +83,15 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(404, b"Not found", "text/plain; charset=utf-8")
 
     def _serve_stats(self) -> None:
+        # The trend range comes from ?range=<key> (day/week/month/3month/6month/
+        # year/5year); the store falls back to its default for anything unknown.
+        params = parse_qs(urlparse(self.path).query)
+        range_key = params.get("range", [""])[0]
         # Re-scan transcripts (cheap — only changed files are re-read), pull the
         # live limits, and bundle everything into one JSON snapshot.
         with self.lock:
             self.store.refresh()
-            data = self.store.aggregate()
+            data = self.store.aggregate(range_key)
         data["limits"] = usage.fetch_limits()
         now = datetime.now(self.tz)
         data["timezone"] = now.strftime("%Z") or "local time"

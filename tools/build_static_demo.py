@@ -30,20 +30,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gen_demo import _DEMO_LIMITS, generate  # noqa: E402  (path set above)
 from portmint_pulse.server import _FAVICON_SVG  # noqa: E402
-from portmint_pulse.transcripts import TranscriptStore  # noqa: E402
+from portmint_pulse.transcripts import RANGES, TranscriptStore  # noqa: E402
 
 
 def build_stats() -> dict:
-    """Generate synthetic sessions and aggregate them into an /api/stats payload."""
+    """Aggregate synthetic sessions into one /api/stats payload PER range, so the
+    demo's range selector works without a backend. Returns {range_key: payload}.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="pulse-static-"))
-    generate(tmp, days=30, seed=7)
+    # ~14 months of history so Month/3M/6M/Year all show real data (5Y shows what
+    # exists). Hourly "Day" view reads today's generated files.
+    generate(tmp, days=420, seed=7)
     store = TranscriptStore(tz=timezone.utc, projects_dir=str(tmp))
     store.refresh()
-    data = store.aggregate()
-    data["limits"] = _DEMO_LIMITS
-    # A stable, obviously-illustrative timestamp (no real local time leaked).
-    data["generated_at"] = "demo · synthetic data"
-    return data
+    out: dict = {}
+    for key in RANGES:
+        data = store.aggregate(key)
+        data["limits"] = _DEMO_LIMITS
+        data["timezone"] = "UTC"
+        # A stable, obviously-illustrative timestamp (no real local time leaked).
+        data["generated_at"] = "demo · synthetic data"
+        out[key] = data
+    return out
 
 
 # Injected just inside <body>: a ribbon + a fetch shim that answers /api/stats
@@ -62,14 +70,18 @@ _INJECT_TEMPLATE = """
   <a href="https://github.com/colelevy08/portmint-pulse">Install Portmint Pulse to see your own usage →</a>
 </div>
 <script>
-  // DEMO MODE: no server here. Answer the dashboard's /api/stats call from a baked
-  // snapshot of synthetic data so the page renders identically to the real thing.
-  window.__PULSE_DEMO_STATS__ = {stats_json};
+  // DEMO MODE: no server here. Answer the dashboard's /api/stats?range=… call from
+  // a baked snapshot per range, so the range selector works exactly like the real app.
+  window.__PULSE_DEMO__ = {stats_json};
   (function () {{
     const orig = window.fetch ? window.fetch.bind(window) : null;
     window.fetch = function (url, opts) {{
-      if (String(url).indexOf("/api/stats") !== -1) {{
-        return Promise.resolve(new Response(JSON.stringify(window.__PULSE_DEMO_STATS__), {{
+      const s = String(url);
+      if (s.indexOf("/api/stats") !== -1) {{
+        const m = s.match(/[?&]range=([^&]+)/);
+        const key = m ? decodeURIComponent(m[1]) : "month";
+        const data = window.__PULSE_DEMO__[key] || window.__PULSE_DEMO__["month"];
+        return Promise.resolve(new Response(JSON.stringify(data), {{
           status: 200, headers: {{ "Content-Type": "application/json" }},
         }}));
       }}
