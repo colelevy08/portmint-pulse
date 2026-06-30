@@ -13,6 +13,11 @@ permissions:
 jobs:
   pypi:
     runs-on: ubuntu-latest
+    # Gated OFF until PyPI Trusted Publishing is configured. While the repo variable
+    # PYPI_READY is unset, this job is SKIPPED (a neutral result, not a red failure),
+    # so cutting releases pre-PyPI doesn't litter the Actions tab. After you set up the
+    # trusted publisher, enable it with: gh variable set PYPI_READY --body true
+    if: ${{ vars.PYPI_READY == 'true' }}
     environment:
       name: pypi
       url: https://pypi.org/p/portmint-pulse

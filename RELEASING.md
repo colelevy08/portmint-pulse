@@ -24,6 +24,10 @@ Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
    - Environment name: `pypi`
 3. In this repo, **Settings → Environments → New environment → `pypi`** (no secrets needed; the
    environment just scopes the OIDC trust).
+4. **Enable the publish job:** `gh variable set PYPI_READY --body true` (or Settings → Secrets and
+   variables → Actions → Variables → New variable `PYPI_READY` = `true`). Until this is set, the
+   `publish.yml` job **skips** (a neutral result, not a red failure) so cutting releases before PyPI is
+   configured doesn't litter the Actions tab.
 
 No API tokens are ever stored — PyPI verifies the GitHub OIDC identity at publish time.
 
