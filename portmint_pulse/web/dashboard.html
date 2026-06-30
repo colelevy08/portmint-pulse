@@ -444,7 +444,7 @@ async function load() {
     document.getElementById("filecount").textContent = fmtInt(d.transcript_files);
     document.getElementById("gen").textContent = "Generated " + d.generated_at;
     document.getElementById("updated").innerHTML =
-      `<b>Updated</b> ${new Date().toLocaleTimeString()}<br>auto-refreshes every 60s`;
+      `<b>Updated</b> ${new Date().toLocaleTimeString()}<br>stats every 60s · limits every few min`;
   } catch (e) {
     document.getElementById("updated").innerHTML = `<b style="color:var(--red)">Error</b> loading stats`;
   } finally {

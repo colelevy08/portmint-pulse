@@ -95,6 +95,41 @@ def test_cold_429_sets_backoff_and_stops_calling(monkeypatch):
     assert calls["n"] == 1  # did NOT re-hit the rate-limited endpoint
 
 
+def test_oauth_call_respects_ttl(monkeypatch):
+    # Within the TTL, repeated fetch_limits() must be served from cache — the OAuth
+    # endpoint must not be hit more than once per window (it 429s the real token).
+    monkeypatch.setattr(usage, "_read_access_token", lambda: "tok")
+    calls = {"n": 0}
+    payload = {"five_hour": {"utilization": 10, "resets_at": None}}
+
+    def _ok(*_a, **_k):
+        calls["n"] += 1
+        return _Resp(payload)
+
+    monkeypatch.setattr(urllib.request, "urlopen", _ok)
+    usage.fetch_limits()
+    usage.fetch_limits()
+    usage.fetch_limits()
+    assert calls["n"] == 1  # 2nd and 3rd served from cache within TTL
+
+
+def test_429_backoff_is_exponential(monkeypatch):
+    import time
+    monkeypatch.setattr(usage, "_read_access_token", lambda: "tok")
+
+    def _429(*_a, **_k):
+        raise urllib.error.HTTPError("u", 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", _429)
+    usage.fetch_limits()
+    assert usage._state["fails"] == 1
+    usage._state["backoff_until"] = 0.0  # allow another attempt
+    usage.fetch_limits()
+    assert usage._state["fails"] == 2
+    # second backoff (~360s) is well past the 180s base — growth, not flat.
+    assert usage._state["backoff_until"] - time.monotonic() > 300
+
+
 def test_expired_token_message(monkeypatch):
     monkeypatch.setattr(usage, "_read_access_token", lambda: "tok")
 

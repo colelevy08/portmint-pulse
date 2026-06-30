@@ -19,13 +19,16 @@ def _write_jsonl(path, records):
             fh.write(json.dumps(r) + "\n")
 
 
-def _assistant(model, ts, cwd, **usage):
-    return {
+def _assistant(model, ts, cwd, rid=None, **usage):
+    obj = {
         "type": "assistant",
         "timestamp": ts,
         "cwd": cwd,
         "message": {"model": model, "usage": usage},
     }
+    if rid is not None:
+        obj["requestId"] = rid
+    return obj
 
 
 def _ago_iso(days=0, hour=12, minute=0):
@@ -58,6 +61,60 @@ def test_aggregate_basic(tmp_path):
     assert data["models"][0]["cost"] == 1.0
     assert data["projects"][0]["name"] == "alpha"
     assert isinstance(data["series"], list) and len(data["series"]) == 30  # 30 daily buckets
+
+
+def test_requestid_dedup_counts_each_request_once(tmp_path):
+    # Claude Code logs the same requestId multiple times — summing every line would
+    # ~2x the real numbers. We must count each request once.
+    projects = tmp_path / "projects"
+    _write_jsonl(projects / "enc" / "s.jsonl", [
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", rid="r1", input_tokens=1000),
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", rid="r1", input_tokens=1000),  # dup
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", rid="r1", input_tokens=1000),  # dup
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", rid="r2", input_tokens=500),   # distinct request
+    ])
+    store = TranscriptStore(tz=timezone.utc, projects_dir=str(projects))
+    store.refresh()
+    data = store.aggregate("month")
+    assert data["lifetime"]["tokens"]["total"] == 1500  # 1000 + 500, NOT 3500
+    assert data["lifetime"]["messages"] == 2            # 2 requests, NOT 4 log lines
+
+
+def test_dedup_keeps_richest_of_duplicate_requests(tmp_path):
+    # A 0/1-token streaming placeholder shares a requestId with the real value;
+    # keep the real (max) one regardless of order.
+    projects = tmp_path / "projects"
+    _write_jsonl(projects / "enc" / "s.jsonl", [
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", rid="r1", input_tokens=1),    # placeholder first
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", rid="r1", input_tokens=900),  # real
+    ])
+    store = TranscriptStore(tz=timezone.utc, projects_dir=str(projects))
+    store.refresh()
+    assert store.aggregate("month")["lifetime"]["tokens"]["total"] == 900
+
+
+def test_records_without_requestid_are_not_deduped(tmp_path):
+    # No id → we can't tell duplicates apart → keep each (back-compat for old logs).
+    projects = tmp_path / "projects"
+    _write_jsonl(projects / "enc" / "s.jsonl", [
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", input_tokens=100),
+        _assistant("claude-haiku-4-5", _ago_iso(1), "/x/proj", input_tokens=100),
+    ])
+    store = TranscriptStore(tz=timezone.utc, projects_dir=str(projects))
+    store.refresh()
+    assert store.aggregate("month")["lifetime"]["tokens"]["total"] == 200
+
+
+def test_hourly_view_also_dedupes(tmp_path):
+    projects = tmp_path / "projects"
+    _write_jsonl(projects / "enc" / "s.jsonl", [
+        _assistant("claude-haiku-4-5", _ago_iso(0, hour=9), "/x/proj", rid="r1", input_tokens=1000),
+        _assistant("claude-haiku-4-5", _ago_iso(0, hour=9), "/x/proj", rid="r1", input_tokens=1000),  # dup
+    ])
+    store = TranscriptStore(tz=timezone.utc, projects_dir=str(projects))
+    store.refresh()
+    series = store.aggregate("day")["series"]
+    assert series[9]["tokens"] == 1000  # counted once, not 2000
 
 
 def test_incremental_reparse_only_changed(tmp_path):

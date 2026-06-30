@@ -27,7 +27,7 @@ First public release.
 - Offline `pytest` suite with synthetic fixtures; CI across macOS/Windows/Linux and Python 3.9–3.13.
 - `tools/gen_demo.py` to preview the dashboard on fabricated data, and `tools/build_static_demo.py`
   + a hosted **GitHub Pages live demo** (synthetic data, runs entirely in the browser).
-- Live limits are cached (~90s TTL) with **429 backoff** and last-good fallback, so the bars stay
+- Live limits are cached (~180s TTL) with **429 backoff** and last-good fallback, so the bars stay
   steady and `/api/stats` never blocks on a slow/rate-limited usage API.
 - DST-aware local-timezone resolution on macOS/Linux (resolves the IANA zone); Windows falls back to
   a fixed-offset zone — use `--timezone` there for a named zone. The dashboard labels the zone it's
@@ -37,6 +37,15 @@ First public release.
 - Transcript cache keyed on `(mtime, size)` so same-mtime appends aren't missed; macOS Keychain is
   consulted even when a tokenless credentials file exists.
 - A loud warning when binding a non-loopback `--host`.
+
+### Accuracy & reliability
+- **Dedupe transcript records by `requestId`.** Claude Code logs the same request
+  multiple times (often 2–10×, sometimes with 0/1-token placeholders), so naive
+  summing over-counted tokens & cost ~2.3× on real data. Pulse now counts each
+  request once (keeping its richest usage), in both the daily and hourly views.
+- Raise the live-limits poll TTL to **180s** with **exponential 429 backoff**
+  (180→360→720s, capped 15 min), so a fast dashboard refresh never risks
+  rate-limiting your real Claude token.
 
 ### Privacy
 - The dashboard page makes zero outbound requests (no web fonts/CDNs).

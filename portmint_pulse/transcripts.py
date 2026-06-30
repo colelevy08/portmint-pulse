@@ -124,6 +124,79 @@ def _extract_record(obj: object) -> tuple[datetime, str, int, int, int, int, int
     return (ts, model, inp, out, cr, cw5, cw1)
 
 
+# A parsed assistant turn: (timestamp, model, input, output, cache_read, cw5, cw1).
+_Record = tuple[datetime, str, int, int, int, int, int]
+
+
+def _request_id(obj: dict) -> str | None:
+    """The id identifying one Claude request — used to dedupe repeated log entries.
+    Prefers the top-level ``requestId``, falling back to ``message.id``."""
+    rid = obj.get("requestId")
+    if isinstance(rid, str) and rid:
+        return rid
+    msg = obj.get("message")
+    mid = msg.get("id") if isinstance(msg, dict) else None
+    return mid if isinstance(mid, str) and mid else None
+
+
+def _record_total(rec: _Record) -> int:
+    """Total tokens in a record (to keep the richest of duplicate log entries)."""
+    return rec[2] + rec[3] + rec[4] + rec[5] + rec[6]
+
+
+def _read_file(path: str) -> tuple[list[_Record], dict[str, int]]:
+    """Single-pass read of one transcript file → (deduped records, cwd counter).
+
+    Claude Code logs the SAME ``requestId`` multiple times — verified on real data
+    to be *streaming partials of one turn*: input + cache tokens are constant and
+    only ``output_tokens`` grows. So summing every line double-counts (≈2.3× on real
+    data) — we keep ONE record per request: the one with the most tokens (the final
+    partial). Do NOT change this to sum the partials; that re-introduces the bug.
+    Records with no request id are kept individually (we can't tell duplicates apart).
+
+    Scope note: dedup is PER FILE. On observed data no requestId ever spans two
+    files, so this is exact; if a future Claude Code ever forks/resumes a session
+    and copies a requestId into a second file, it would be counted once per file —
+    revisit (dedup globally in the aggregation layer) if that's ever observed.
+    Defensive against malformed lines throughout.
+    """
+    by_request: dict[str, _Record] = {}
+    no_id: list[_Record] = []
+    cwd_counts: dict[str, int] = defaultdict(int)
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                cwd = obj.get("cwd")
+                if isinstance(cwd, str) and cwd:
+                    cwd_counts[cwd] += 1
+                try:
+                    rec = _extract_record(obj)
+                    if rec is None:
+                        continue
+                    rid = _request_id(obj)
+                    if rid is None:
+                        no_id.append(rec)
+                        continue
+                    prev = by_request.get(rid)
+                    if prev is None or _record_total(rec) > _record_total(prev):
+                        by_request[rid] = rec
+                except (ValueError, TypeError, AttributeError):
+                    continue
+    except OSError:
+        # File vanished/unreadable mid-read — return whatever we gathered.
+        pass
+    return list(by_request.values()) + no_id, cwd_counts
+
+
 class _RangeSpec(TypedDict):
     days: int   # how far back, inclusive of today
     unit: str   # chart bucket size: "hour" | "day" | "week" | "month"
@@ -170,62 +243,25 @@ def _project_label(cwd: str) -> str:
 
 
 def _summarise_file(path: str, mtime: float, size: int, tz: tzinfo) -> _FileSummary:
-    """Read one transcript file and fold it down to a _FileSummary."""
+    """Read one transcript file and fold it down to a _FileSummary (deduped)."""
     session_id = os.path.splitext(os.path.basename(path))[0]
     summary = _FileSummary(mtime=mtime, size=size, session_id=session_id, project="(unknown)")
-    # We pick the project label from the most common working directory seen.
-    cwd_counts: dict[str, int] = defaultdict(int)
-
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    # A half-written final line in the active session is normal —
-                    # skip it rather than failing the whole file.
-                    continue
-
-                # A JSON line that isn't an object (rare, but it's a file we don't
-                # control) has no .get — skip it rather than crash.
-                if not isinstance(obj, dict):
-                    continue
-
-                cwd = obj.get("cwd")
-                if isinstance(cwd, str) and cwd:
-                    cwd_counts[cwd] += 1
-
-                # One malformed assistant record must never blank the whole
-                # dashboard — extract defensively and skip on any bad shape.
-                try:
-                    rec = _extract_record(obj)
-                    if rec is None:
-                        continue
-                    ts, model, inp, out, cr, cw5, cw1 = rec
-                    if summary.first_ts is None or ts < summary.first_ts:
-                        summary.first_ts = ts
-                    if summary.last_ts is None or ts > summary.last_ts:
-                        summary.last_ts = ts
-                    day = ts.astimezone(tz).strftime("%Y-%m-%d")
-                    bucket = summary.by_day.setdefault(day, {}).setdefault(model, _Bucket())
-                    bucket.messages += 1
-                    bucket.input += inp
-                    bucket.output += out
-                    bucket.cache_read += cr
-                    bucket.cache_write_5m += cw5
-                    bucket.cache_write_1h += cw1
-                except (ValueError, TypeError, AttributeError):
-                    continue
-    except OSError:
-        # File vanished or is unreadable — return whatever we have.
-        return summary
-
+    records, cwd_counts = _read_file(path)
+    for ts, model, inp, out, cr, cw5, cw1 in records:
+        if summary.first_ts is None or ts < summary.first_ts:
+            summary.first_ts = ts
+        if summary.last_ts is None or ts > summary.last_ts:
+            summary.last_ts = ts
+        day = ts.astimezone(tz).strftime("%Y-%m-%d")
+        bucket = summary.by_day.setdefault(day, {}).setdefault(model, _Bucket())
+        bucket.messages += 1
+        bucket.input += inp
+        bucket.output += out
+        bucket.cache_read += cr
+        bucket.cache_write_5m += cw5
+        bucket.cache_write_1h += cw1
     if cwd_counts:
-        top_cwd = max(cwd_counts, key=lambda c: cwd_counts[c])
-        summary.project = _project_label(top_cwd)
+        summary.project = _project_label(max(cwd_counts, key=lambda c: cwd_counts[c]))
     return summary
 
 
@@ -293,31 +329,19 @@ class TranscriptStore:
 
         hours = [{"tokens": 0, "cost": 0.0} for _ in range(24)]
         for path, _mtime, _size in relevant:
-            try:
-                with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            obj = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        rec = _extract_record(obj)
-                        if rec is None:
-                            continue
-                        ts, model, inp, out, cr, cw5, cw1 = rec
-                        local = ts.astimezone(tz)
-                        if local.strftime("%Y-%m-%d") != day_str:
-                            continue
-                        cell = hours[local.hour]
-                        cell["tokens"] += inp + out + cr + cw5 + cw1
-                        cell["cost"] += pricing.price(
-                            model, input_tokens=inp, output_tokens=out,
-                            cache_read=cr, cache_write_5m=cw5, cache_write_1h=cw1,
-                        )
-            except OSError:
-                continue
+            # _read_file dedupes by requestId, so the hourly view doesn't double-count
+            # the same way the daily summaries don't.
+            records, _cwd = _read_file(path)
+            for ts, model, inp, out, cr, cw5, cw1 in records:
+                local = ts.astimezone(tz)
+                if local.strftime("%Y-%m-%d") != day_str:
+                    continue
+                cell = hours[local.hour]
+                cell["tokens"] += inp + out + cr + cw5 + cw1
+                cell["cost"] += pricing.price(
+                    model, input_tokens=inp, output_tokens=out,
+                    cache_read=cr, cache_write_5m=cw5, cache_write_1h=cw1,
+                )
         result = [{"label": f"{h:02d}:00", "tokens": hours[h]["tokens"], "cost": round(hours[h]["cost"], 4)} for h in range(24)]
         self._hourly_cache = (day_str, signature, result)
         return result

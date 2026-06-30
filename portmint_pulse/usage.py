@@ -34,13 +34,18 @@ USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 _MAC_KEYCHAIN_SERVICE = "Claude Code-credentials"
 
 # How long a successful result is reused before we hit the network again, and how
-# long we wait after a 429 before trying again. The dashboard polls every 60s; a
-# 90s TTL means most refreshes are served from cache, well under any rate limit.
-_TTL_SECONDS = 90.0
-_BACKOFF_SECONDS = 120.0
+# long we wait after a 429 before trying again. The /api/oauth/usage endpoint
+# rate-limits aggressively PER TOKEN and is only safe at ~>=180s intervals, so the
+# TTL is 180s — the dashboard's faster local refresh is served from cache and the
+# network is only touched ~once per window, well clear of 429-ing the real token.
+_TTL_SECONDS = 180.0
+# Exponential backoff after a 429: 180s, 360s, 720s, capped at 900s (15 min).
+_BACKOFF_BASE_SECONDS = 180.0
+_BACKOFF_CAP_SECONDS = 900.0
 
 # Cache of the last *successful* fetch, so transient errors keep showing real bars.
-_state: dict = {"good": None, "good_ts": 0.0, "backoff_until": 0.0}
+# "fails" counts consecutive 429s to grow the backoff; reset on any success.
+_state: dict = {"good": None, "good_ts": 0.0, "backoff_until": 0.0, "fails": 0}
 
 # Friendly labels for the rolling-limit windows the API returns. Anything not in
 # this map (or whose utilisation is null) is simply not shown.
@@ -59,6 +64,7 @@ def reset_cache() -> None:
     _state["good"] = None
     _state["good_ts"] = 0.0
     _state["backoff_until"] = 0.0
+    _state["fails"] = 0
 
 
 def _token_from_blob(blob: object) -> str | None:
@@ -221,7 +227,9 @@ def fetch_limits() -> dict:
         if e.code in (401, 403):
             return good if good is not None else {"error": "Login token expired — run `claude` once to refresh it."}
         if e.code == 429:
-            _state["backoff_until"] = now + _BACKOFF_SECONDS
+            _state["fails"] += 1
+            backoff = min(_BACKOFF_CAP_SECONDS, _BACKOFF_BASE_SECONDS * (2 ** (_state["fails"] - 1)))
+            _state["backoff_until"] = now + backoff
             return good if good is not None else {"error": "Usage API is rate-limiting (429) — retrying shortly."}
         return good if good is not None else {"error": f"Usage API returned HTTP {e.code}."}
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
@@ -231,4 +239,5 @@ def fetch_limits() -> dict:
     _state["good"] = result
     _state["good_ts"] = now
     _state["backoff_until"] = 0.0
+    _state["fails"] = 0
     return result
