@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from datetime import datetime, tzinfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from urllib.parse import parse_qs, urlparse
 
-from . import usage
+from . import forecast, usage
 from .transcripts import PROJECTS_DIR, TranscriptStore
 
 # The favicon is the Portmint "badge" — the porthole mark on the canonical Ink
@@ -48,11 +49,13 @@ def _load_dashboard_html() -> bytes:
 
 
 class _Handler(BaseHTTPRequestHandler):
-    # All four set by the factory below.
+    # All set by the factory below.
     store: TranscriptStore = None  # type: ignore[assignment]
     lock: threading.Lock = None  # type: ignore[assignment]
     tz: tzinfo = None  # type: ignore[assignment]
     dashboard: bytes = b""
+    # Per-server utilisation history (label -> [(epoch, util)]) for time-to-limit.
+    history: dict = {}
 
     # Quieter logging — drop the noisy default per-request line.
     def log_message(self, fmt: str, *args) -> None:
@@ -96,6 +99,9 @@ class _Handler(BaseHTTPRequestHandler):
             # selected chart range) — drives the "money's worth" comparison in the UI.
             data["value_30d_usd"] = self.store.aggregate("month")["period"]["cost"]
         data["limits"] = usage.fetch_limits()
+        # Project time-to-limit from utilisation observed across polls (in-memory only).
+        with self.lock:
+            forecast.annotate(self.history, data["limits"], time.time())
         now = datetime.now(self.tz)
         data["timezone"] = now.strftime("%Z") or "local time"
         data["generated_at"] = now.strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -117,6 +123,6 @@ def build_server(host: str, port: int, *, tz: tzinfo, projects_dir: str = PROJEC
     handler = type(
         "PulseHandler",
         (_Handler,),
-        {"store": store, "lock": threading.Lock(), "tz": tz, "dashboard": _load_dashboard_html()},
+        {"store": store, "lock": threading.Lock(), "tz": tz, "dashboard": _load_dashboard_html(), "history": {}},
     )
     return ThreadingHTTPServer((host, port), handler)

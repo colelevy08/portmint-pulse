@@ -4,6 +4,16 @@ All notable changes to Portmint Pulse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-06-30
+
+### Added
+- **Time-to-limit projection** — Pulse now watches how fast each rate-limit window is rising and
+  estimates *when you'll hit it at the current pace*, shown only when you're on track to hit 100%
+  **before** the window resets. The dashboard adds a ⚡ `~2h to limit` cue on those bars; `watch` adds a
+  `~2h to wall` note to its console line. New `forecast` module (pure projection math); the server keeps
+  a tiny in-memory utilisation history (no disk, zero telemetry). Needs a few minutes of observation
+  before it can project.
+
 ## [1.3.0] — 2026-06-30
 
 ### Added

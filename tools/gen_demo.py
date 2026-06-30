@@ -103,7 +103,8 @@ def generate(target: Path, *, days: int = 30, seed: int = 7) -> int:
 # Fabricated live-limit windows so the screenshot shows the bars populated.
 _DEMO_LIMITS = {
     "windows": [
-        {"label": "5-hour session", "utilization": 62.0, "resets_human": "resets in 2h 14m"},
+        {"label": "5-hour session", "utilization": 62.0, "resets_human": "resets in 2h 14m",
+         "forecast": {"eta_minutes": 64.0, "eta_human": "1h4m", "hits_before_reset": True}},
         {"label": "7-day · all models", "utilization": 38.0, "resets_human": "resets in 4d 6h"},
         {"label": "7-day · Opus", "utilization": 73.0, "resets_human": "resets in 4d 6h"},
         {"label": "7-day · Sonnet", "utilization": 41.0, "resets_human": "resets in 4d 6h"},

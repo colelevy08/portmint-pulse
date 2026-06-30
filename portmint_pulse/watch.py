@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import signal
 import threading
+import time
 from datetime import datetime
 
 _THRESHOLDS = (80, 95, 100)
@@ -60,7 +61,8 @@ def evaluate(windows: list[dict], latched: set) -> tuple[list[dict], set]:
 
 
 def _status_line(windows: list[dict]) -> str:
-    """A compact one-line view of every window + which binds first."""
+    """A compact one-line view of every window + which binds first (and, if it's
+    projected to hit 100% before it resets, a rough time-to-the-wall)."""
     if not windows:
         return "no active limit windows"
     parts = []
@@ -69,7 +71,11 @@ def _status_line(windows: list[dict]) -> str:
         mark = " ⚠" if util >= 80 else ""
         parts.append(f"{w['label']} {util:.0f}%{mark}")
     binds = max(windows, key=lambda w: w.get("utilization", 0))
-    return " · ".join(parts) + f"   (binds: {binds['label']} {binds.get('utilization', 0):.0f}%)"
+    line = " · ".join(parts) + f"   (binds: {binds['label']} {binds.get('utilization', 0):.0f}%)"
+    fc = binds.get("forecast")
+    if isinstance(fc, dict) and fc.get("hits_before_reset") and fc.get("eta_human"):
+        line += f" · ~{fc['eta_human']} to wall"
+    return line
 
 
 def _alert_text(alert: dict) -> tuple[str, str]:
@@ -83,7 +89,7 @@ def _alert_text(alert: dict) -> tuple[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from . import usage  # local import keeps the path light
+    from . import forecast, usage  # local import keeps the path light
 
     parser = argparse.ArgumentParser(prog="portmint-pulse watch", description="Warn before you hit a Claude rate limit.")
     parser.add_argument("--interval", type=int, default=30, help="Poll seconds (default 30; clamped 5–600).")
@@ -105,12 +111,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n  Ψ Portmint Pulse — watching your Claude limits (every {interval}s). Ctrl+C to stop.\n", flush=True)
 
     latched: set = set()
+    fc_history: dict = {}
     while not stop.is_set():
         limits = usage.fetch_limits()
         if isinstance(limits, dict) and limits.get("error"):
             print(f"  {datetime.now().strftime('%H:%M:%S')}  limits unavailable — {limits['error']}", flush=True)
         else:
             windows = _windows_from(limits if isinstance(limits, dict) else {})
+            forecast.annotate(fc_history, {"windows": windows}, time.time())  # adds ~time-to-wall
             print(f"  {datetime.now().strftime('%H:%M:%S')}  {_status_line(windows)}", flush=True)
             alerts, latched = evaluate(windows, latched)
             for alert in alerts:

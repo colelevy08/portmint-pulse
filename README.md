@@ -57,7 +57,8 @@ Apple frameworks, no observability stack, no `npm`, no database, nothing to set 
 
 - **Usage limits** — pulled live from your Claude Code login token: the 5-hour session window,
   the 7-day all-models window, the 7-day Opus and Sonnet windows, and any pay-as-you-go credit balance.
-  Bars go mint → amber → red with reset countdowns.
+  Bars go mint → amber → red with reset countdowns — plus, once Pulse has watched your pace for a few
+  minutes, a ⚡ **time-to-the-wall** estimate on any window you're on track to hit *before* it resets.
 - **At a glance** — Today / This week / Lifetime cards: estimated cost, tokens, messages, sessions.
 - **Usage over time** — a **range selector** (Day · Week · Month · 3M · 6M · Year · **up to 5 years**)
   drives the tokens & cost area charts, which auto-bucket to fit the window — **hourly** for a single
@@ -118,8 +119,9 @@ portmint-pulse watch --no-desktop    # console only
 
 Notifications are dependency-free and cross-platform — macOS (`osascript`), Linux (`notify-send`),
 **Windows & WSL** (a native toast via PowerShell, no module to install) — and fall back to a console
-line if no notifier is available. It reuses the cached limits poll, so it never rate-limits your token,
-keeps **no state on disk** (zero telemetry), and re-arms each alert when a new window period begins.
+line if no notifier is available. The console line also shows a **`~2h to wall`** projection once it has
+tracked your pace. It reuses the cached limits poll, so it never rate-limits your token, keeps **no state
+on disk** (zero telemetry), alerts once per crossing, and re-arms after a window resets.
 
 ## One-shot `summary`
 

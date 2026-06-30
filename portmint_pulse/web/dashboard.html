@@ -329,10 +329,14 @@ function renderLimits(limits) {
     const u = Math.max(0, Math.min(100, Number.isFinite(raw) ? raw : 0));
     // A non-colour severity cue (so it doesn't rely on hue alone).
     const cue = u >= 90 ? ` · over` : (u >= 70 ? ` · near limit` : "");
+    // Time-to-wall: only when we project hitting 100% BEFORE this window resets.
+    const fc = w.forecast;
+    const pace = (fc && fc.hits_before_reset && fc.eta_human)
+      ? ` · <span style="color:var(--amber)">⚡ ~${escapeHtml(fc.eta_human)} to limit</span>` : "";
     html += `<div class="limit">
       <div class="limit-row">
         <span class="lbl">${escapeHtml(w.label)}</span>
-        <span class="reset">${escapeHtml(w.resets_human || "")}${cue}</span>
+        <span class="reset">${escapeHtml(w.resets_human || "")}${cue}${pace}</span>
         <span class="pct" style="color:${limitColor(u)}">${u.toFixed(0)}%</span>
       </div>
       <div class="track"><div class="fill" style="width:${u}%;background:${limitColor(u)}"></div></div>
