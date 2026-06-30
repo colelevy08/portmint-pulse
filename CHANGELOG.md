@@ -4,6 +4,16 @@ All notable changes to Portmint Pulse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-06-29
+
+### Added
+- **Status line** (`portmint-pulse statusline`) — renders the Claude Code status line from the JSON
+  blob Claude Code pipes on stdin every turn. Shows the rate-limit window closest to its limit
+  (5h / 7d / Opus / Sonnet) as a mint→amber→red bar with a reset countdown, plus session cost — with
+  **no extra API call and no token cost** — and falls back to context-window % when limits aren't
+  present. Defensive (never blank, never non-zero exit, no network); preview with `--demo`. Configure
+  via one `statusLine` block in `~/.claude/settings.json`.
+
 ## [1.0.0] — 2026-06-25
 
 First public release.

@@ -70,6 +70,38 @@ machine's local timezone** by default (`--timezone` to override).
 
 ---
 
+## Status line — your live limits, every turn
+
+The dashboard is the deep-dive; the **status line** keeps Pulse always in view. Claude Code can run a
+command after every turn and show its output as a status bar — and the data it pipes already includes
+your **live rate-limit windows**, so Pulse renders a glanceable bar **with no extra API call and no
+token cost**:
+
+```
+[Opus] ▓▓▓▓▓░░░ 62% · 7d-opus 2h14m · $0.06
+```
+
+It shows the window closest to its limit (5h / 7d / Opus / Sonnet) in mint → amber → red with a reset
+countdown, plus the session cost — and falls back to **context-window %** when limits aren't available
+(API-key users, or before the first response). Add this to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": { "type": "command", "command": "portmint-pulse statusline", "padding": 2 }
+}
+```
+
+This uses the `portmint-pulse` command, which is on your PATH after a `pipx`/`uv`/`pip` install.
+**Running from a clone instead?** Point `command` straight at the script — `"python3
+/abs/path/to/portmint-pulse/app.py statusline"` (or `"python3 -m portmint_pulse statusline"` if the
+package is importable) — otherwise Claude Code silently shows a blank bar. On Windows, write the path
+with forward slashes (`C:/Users/you/...`) inside the JSON.
+
+Preview it without configuring anything: `portmint-pulse statusline --demo`. *(Optional: add
+`"refreshInterval": 10` to the block so the reset countdown ticks while you're idle.)*
+
+---
+
 ## Install
 
 Pick whichever you like — all give you the `portmint-pulse` command (or just run from source).

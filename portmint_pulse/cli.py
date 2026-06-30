@@ -8,6 +8,10 @@ Run it any of these ways:
 
 Then open the printed URL (http://127.0.0.1:8787 by default). No dependencies on
 Linux/macOS; on Windows, ``tzdata`` is pulled in only if you pass --timezone.
+
+There is also a ``statusline`` subcommand (``portmint-pulse statusline``) that
+renders the Claude Code status line from the session blob on stdin — see the
+README. It is dispatched before the heavy dashboard imports so it starts fast.
 """
 
 from __future__ import annotations
@@ -19,9 +23,6 @@ import threading
 import webbrowser
 
 from . import __version__
-from .server import build_server
-from .transcripts import PROJECTS_DIR
-from .tz import resolve_timezone
 
 
 def _supports_color() -> bool:
@@ -56,9 +57,26 @@ def _open_browser(url: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    # Subcommand: the status-line renderer. Dispatched BEFORE importing the server
+    # so it stays fast (it runs on every Claude Code turn).
+    if args and args[0] == "statusline":
+        from .statusline import main as statusline_main
+
+        return statusline_main(args[1:])
+    return _run_dashboard(args)
+
+
+def _run_dashboard(argv: list[str]) -> int:
+    # Heavy imports live here so the statusline path above never pays for them.
+    from .server import build_server
+    from .transcripts import PROJECTS_DIR
+    from .tz import resolve_timezone
+
     parser = argparse.ArgumentParser(
         prog="portmint-pulse",
         description="Portmint Pulse — a local, private Claude Code usage dashboard.",
+        epilog="subcommand: `portmint-pulse statusline` renders the Claude Code status line (reads the session blob on stdin). See the README.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind address (default 127.0.0.1; use 0.0.0.0 to expose on your LAN).")
     parser.add_argument("--port", type=int, default=8787, help="Port (default 8787).")
