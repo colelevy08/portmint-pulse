@@ -112,3 +112,25 @@ def price(
 def known_models() -> list[str]:
     """The set of model keys we have prices for (handy for diagnostics)."""
     return list(_BASE_PER_MTOK.keys())
+
+
+# --- Subscription plans (for the "money's worth" comparison) -----------------
+# Claude.ai flat monthly prices. Used ONLY to compare your API-equivalent token
+# spend against a subscription — never billed, never sent anywhere.
+SUBSCRIPTION_PLANS: dict[str, tuple[str, float]] = {
+    "pro": ("Claude Pro", 20.0),
+    "max5": ("Claude Max 5×", 100.0),
+    "max20": ("Claude Max 20×", 200.0),
+}
+
+
+def plan_price(name: str | None) -> float | None:
+    """Monthly USD for a plan key (pro/max5/max20), or None if unknown."""
+    plan = SUBSCRIPTION_PLANS.get((name or "").strip().lower())
+    return plan[1] if plan else None
+
+
+def plan_label(name: str | None) -> str | None:
+    """Display label for a plan key (e.g. 'Claude Max 5×'), or None if unknown."""
+    plan = SUBSCRIPTION_PLANS.get((name or "").strip().lower())
+    return plan[0] if plan else None

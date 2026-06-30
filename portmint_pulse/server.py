@@ -92,6 +92,9 @@ class _Handler(BaseHTTPRequestHandler):
         with self.lock:
             self.store.refresh()
             data = self.store.aggregate(range_key)
+            # 30-day API-equivalent spend (always last-30-days, independent of the
+            # selected chart range) — drives the "money's worth" comparison in the UI.
+            data["value_30d_usd"] = self.store.aggregate("month")["period"]["cost"]
         data["limits"] = usage.fetch_limits()
         now = datetime.now(self.tz)
         data["timezone"] = now.strftime("%Z") or "local time"

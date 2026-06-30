@@ -64,6 +64,9 @@ Apple frameworks, no observability stack, no `npm`, no database, nothing to set 
   day, daily, weekly, then **monthly** for multi-year views (hand-drawn SVG, hover for exact values).
 - **By model** / **By project** — tokens & cost per Claude model / working directory for the selected
   range, ranked by spend.
+- **Money's worth** — your last-30-days usage priced at API rates vs your flat subscription (Pro / Max 5× /
+  Max 20×, remembered locally): a single *"you're getting **N× your subscription's worth**"* multiplier.
+  Also in `summary --plan`.
 
 Auto-refreshes every 60 seconds; manual **Refresh** button in the header. Days are bucketed in **your
 machine's local timezone** by default (`--timezone` to override).

@@ -37,3 +37,14 @@ def test_opus_1m_variant_prices_same_as_base():
     base = pricing.price("claude-opus-4-8", input_tokens=1_000_000)
     variant = pricing.price("claude-opus-4-8[1m]", input_tokens=1_000_000)
     assert base == variant == 5.0
+
+
+def test_subscription_plan_lookup():
+    assert pricing.plan_price("pro") == 20.0
+    assert pricing.plan_price("max5") == 100.0
+    assert pricing.plan_price("max20") == 200.0
+    assert pricing.plan_price("MAX20") == 200.0  # case-insensitive
+    assert pricing.plan_price("bogus") is None
+    assert pricing.plan_price(None) is None
+    assert pricing.plan_label("max5") == "Claude Max 5×"
+    assert pricing.plan_label("nope") is None

@@ -11,6 +11,8 @@ import os
 import sys
 from datetime import datetime
 
+from . import pricing
+
 
 def _fmt_tokens(n: float) -> str:
     n = n or 0
@@ -37,7 +39,21 @@ def _row(label: str, block: dict, extra: str = "") -> str:
     )
 
 
-def _text(data: dict, limits: dict, generated_at: str, tzname: str) -> str:
+def _worth_lines(value_30d: float, plan: str | None) -> list[str]:
+    """The 'money's worth' block: 30-day API-equivalent spend vs a flat plan."""
+    price = pricing.plan_price(plan)
+    label = pricing.plan_label(plan)
+    out = ["", "  Money's worth (last 30 days):"]
+    if price and value_30d:
+        out.append(f"    ${value_30d:,.0f} of API-equivalent usage  =  {value_30d / price:.1f}× your ${price:.0f}/mo {label} plan")
+    elif price:
+        out.append(f"    ${value_30d:,.0f} of API-equivalent usage  ·  ${price:.0f}/mo {label} plan")
+    else:
+        out.append(f"    ${value_30d:,.0f} of API-equivalent usage   (set --plan pro|max5|max20 for your multiplier)")
+    return out
+
+
+def _text(data: dict, limits: dict, generated_at: str, tzname: str, *, value_30d: float | None = None, plan: str | None = None) -> str:
     today, week, life = data["today"], data["week"], data["lifetime"]
     lines = [f"Portmint Pulse — usage summary  ({generated_at}, {tzname})", ""]
     lines.append(_row("Today", today))
@@ -46,6 +62,8 @@ def _text(data: dict, limits: dict, generated_at: str, tzname: str) -> str:
     lines.append(
         f"  Lifetime ${life.get('cost', 0):.2f}  {_fmt_tokens(life.get('tokens', {}).get('total', 0))} tokens  {life.get('messages', 0)} msgs{since}"
     )
+    if value_30d is not None:
+        lines += _worth_lines(value_30d, plan)
     lines.append("")
 
     if isinstance(limits, dict) and limits.get("error"):
@@ -77,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(prog="portmint-pulse summary", description="One-shot usage + live-limits summary.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text.")
+    parser.add_argument("--plan", default=None, choices=["pro", "max5", "max20"], help="Your Claude plan, to show a money's-worth multiplier (also PULSE_PLAN).")
     parser.add_argument("--timezone", default=None, metavar="ZONE", help="IANA timezone (default: local; also PULSE_TIMEZONE).")
     parser.add_argument("--projects-dir", default=None, metavar="DIR", help="Override ~/.claude/projects (also PULSE_PROJECTS_DIR).")
     args = parser.parse_args(argv if argv is not None else [])
@@ -85,21 +104,30 @@ def main(argv: list[str] | None = None) -> int:
     projects_dir = args.projects_dir or os.environ.get("PULSE_PROJECTS_DIR") or PROJECTS_DIR
     store = TranscriptStore(tz=tz, projects_dir=projects_dir)
     store.refresh()
-    data = store.aggregate("week")
+    # "month" range so data["period"] is the last 30 days (Today/Week/Lifetime are
+    # range-independent); period.cost is the API-equivalent value for "money's worth".
+    data = store.aggregate("month")
     limits = usage.fetch_limits()
+    plan = args.plan or os.environ.get("PULSE_PLAN")
+    value_30d = data.get("period", {}).get("cost")
 
     now = datetime.now(tz)
     tzname = now.strftime("%Z") or "local time"
     if args.json:
+        price = pricing.plan_price(plan)
         out = {
             "generated_at": now.isoformat(),
             "timezone": tzname,
             "today": data["today"],
             "week": data["week"],
             "lifetime": data["lifetime"],
+            "value_30d_usd": value_30d,
+            "plan": plan,
+            "plan_price_usd": price,
+            "money_worth_multiplier": round(value_30d / price, 2) if price and value_30d else None,
             "limits": limits,
         }
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
     else:
-        sys.stdout.write(_text(data, limits, now.strftime("%Y-%m-%d %H:%M:%S"), tzname) + "\n")
+        sys.stdout.write(_text(data, limits, now.strftime("%Y-%m-%d %H:%M:%S"), tzname, value_30d=value_30d, plan=plan) + "\n")
     return 0

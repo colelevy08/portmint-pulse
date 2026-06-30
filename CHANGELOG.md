@@ -4,6 +4,19 @@ All notable changes to Portmint Pulse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-06-30
+
+### Added
+- **Money's worth** — a "what would this cost on the API vs my flat plan" multiplier. The dashboard
+  shows your last-30-days API-equivalent usage with a plan selector (Pro / Max 5× / Max 20×, remembered
+  in the browser) → *"you're getting **N× your subscription's worth**"*. `summary --plan pro|max5|max20`
+  (or `PULSE_PLAN`) prints it too, and it's in `summary --json` (`value_30d_usd`, `money_worth_multiplier`).
+  Computed locally from token usage at API rates — nothing billed, nothing sent anywhere.
+
+### Changed
+- Demo (GitHub Pages): the synthetic dataset now reflects an engaged daily user, so the money's-worth
+  figure reads as a realistic positive multiple.
+
 ## [1.2.0] — 2026-06-30
 
 ### Added

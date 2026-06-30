@@ -101,6 +101,17 @@
   .kpi .sub b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
   .accent-mint .big{background:var(--brand-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
 
+  /* ---- Money's worth ---- */
+  .worth{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  .worth-mult{font-size:2.9rem;font-weight:800;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums;
+    background:var(--brand-grad);-webkit-background-clip:text;background-clip:text;color:transparent;white-space:nowrap}
+  .worth-meta{color:var(--muted);font-size:.95rem;line-height:1.55;min-width:220px}
+  .worth-meta b{color:var(--text);font-variant-numeric:tabular-nums}
+  .worth-sub{margin-top:5px;font-size:.85rem}
+  .worth select{background:var(--surface);color:var(--text);border:1px solid var(--line2);border-radius:7px;
+    padding:3px 7px;font:inherit;font-size:.85rem}
+  .worth select:focus-visible{outline:2px solid var(--mint);outline-offset:1px}
+
   /* ---- Charts ---- */
   .chart-card h3{margin:0 0 2px;font-size:.95rem;font-weight:700}
   .chart-card .csub{color:var(--muted);font-size:.78rem;margin-bottom:8px}
@@ -177,6 +188,12 @@
   <section>
     <div class="sec-head"><h2>At a glance</h2><span class="hint" id="tz-label">local time</span></div>
     <div class="grid g-3" id="kpis"></div>
+  </section>
+
+  <!-- Money's worth --------------------------------------------------------->
+  <section>
+    <div class="sec-head"><h2>Money's worth</h2><span class="hint">API-equivalent value vs your plan</span></div>
+    <div class="card" id="worth"><div class="limit-note">…</div></div>
   </section>
 
   <!-- Trend over time (range-selectable, up to 5 years) -------------------->
@@ -359,6 +376,31 @@ function renderKpis(d) {
     kpiCard(`Lifetime${firstSeen}`, life);
 }
 
+// Monthly subscription prices (client-side; the server only sends the raw value).
+const PLAN_PRICES = [["max20","Max 20×",200], ["max5","Max 5×",100], ["pro","Pro",20]];
+function renderWorth(d) {
+  const box = document.getElementById("worth");
+  const value = (typeof d.value_30d_usd === "number") ? d.value_30d_usd : null;
+  if (value === null || value <= 0) {
+    box.innerHTML = `<div class="limit-note">No usage in the last 30 days yet — keep using Claude Code.</div>`;
+    return;
+  }
+  const saved = localStorage.getItem("pulse_plan") || "max5";
+  const plan = PLAN_PRICES.find(p => p[0] === saved) || PLAN_PRICES[1];
+  const mult = value / plan[2];
+  const opts = PLAN_PRICES.map(([k,l,p]) =>
+    `<option value="${k}"${k===saved?" selected":""}>${l} · $${p}/mo</option>`).join("");
+  box.innerHTML = `<div class="worth">
+    <div class="worth-mult">${mult.toFixed(1)}×</div>
+    <div class="worth-meta">
+      <div><b>${fmtCost(value)}</b> of API-equivalent usage in the last 30 days</div>
+      <div class="worth-sub">vs your <select id="plan-select" aria-label="Your Claude plan">${opts}</select> — you're getting <b>${mult.toFixed(1)}× your subscription's worth</b></div>
+    </div>
+  </div>`;
+  const sel = document.getElementById("plan-select");
+  if (sel) sel.addEventListener("change", () => { localStorage.setItem("pulse_plan", sel.value); renderWorth(d); });
+}
+
 function renderCharts(series) {
   series = series || [];
   const tokPts = series.map(p => ({v:p.tokens, label:p.label}));
@@ -427,6 +469,7 @@ async function load() {
     renderEmptyState(d);
     renderLimits(d.limits);
     renderKpis(d);
+    renderWorth(d);
     renderCharts(d.series || []);
     // The period label scopes the trend + breakdown sections to the chosen range.
     const periodLabel = (d.period && d.period.label) || "";

@@ -65,7 +65,9 @@ def generate(target: Path, *, days: int = 30, seed: int = 7) -> int:
             # the demo's Today card is never an unflattering $0.00.
             if day != 0 and rng.random() < 0.35:
                 continue
-            sessions = rng.randint(1, 3)
+            # An engaged daily Claude Code user (several sessions/day) — so the demo
+            # reflects the real target audience and "money's worth" reads above 1×.
+            sessions = rng.randint(3, 8)
             for s in range(sessions):
                 when = now - timedelta(days=day, hours=rng.randint(0, 12), minutes=rng.randint(0, 59))
                 records = []

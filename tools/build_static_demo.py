@@ -44,10 +44,13 @@ def build_stats() -> dict:
     store = TranscriptStore(tz=timezone.utc, projects_dir=str(tmp))
     store.refresh()
     out: dict = {}
+    # Mirror the server: a single last-30-days API-equivalent value for "money's worth".
+    month_value = store.aggregate("month")["period"]["cost"]
     for key in RANGES:
         data = store.aggregate(key)
         data["limits"] = _DEMO_LIMITS
         data["timezone"] = "UTC"
+        data["value_30d_usd"] = month_value
         # A stable, obviously-illustrative timestamp (no real local time leaked).
         data["generated_at"] = "demo · synthetic data"
         out[key] = data

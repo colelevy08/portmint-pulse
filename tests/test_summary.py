@@ -40,3 +40,22 @@ def test_text_surfaces_a_limits_error():
     z = _block(0, 0, 0, 0)
     out = summary._text({"today": z, "week": z, "lifetime": z}, {"error": "not logged in"}, "x", "EDT")
     assert "not logged in" in out
+
+
+def test_money_worth_multiplier_with_plan():
+    z = _block(0, 0, 0, 0)
+    out = summary._text({"today": z, "week": z, "lifetime": z}, {}, "x", "EDT", value_30d=2314.0, plan="max20")
+    assert "Money's worth" in out
+    assert "$2,314" in out and "11.6×" in out and "Max 20×" in out  # 2314/200 = 11.57
+
+
+def test_money_worth_without_plan_shows_hint():
+    z = _block(0, 0, 0, 0)
+    out = summary._text({"today": z, "week": z, "lifetime": z}, {}, "x", "EDT", value_30d=500.0)
+    assert "$500 of API-equivalent" in out and "--plan" in out
+
+
+def test_money_worth_omitted_when_value_absent():
+    z = _block(0, 0, 0, 0)
+    out = summary._text({"today": z, "week": z, "lifetime": z}, {}, "x", "EDT")
+    assert "Money's worth" not in out  # default (no value) → section skipped
