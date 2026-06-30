@@ -393,4 +393,10 @@ Portmint Ink (`#070b14`) surfaces, the mint→sky brand gradient, and Inter thro
 
 [MIT](https://github.com/colelevy08/portmint-pulse/blob/main/LICENSE) — do whatever you like with it.
 
-<div align="center"><sub>Made by <a href="https://github.com/colelevy08">Cole Levy</a> · a <a href="https://portmint.com">Portmint</a> open-source project</sub></div>
+<div align="center">
+
+**If Pulse saved you a surprise throttle, a ⭐ helps other devs find it.**
+
+<sub>Made by <a href="https://github.com/colelevy08">Cole Levy</a> · a <a href="https://portmint.com">Portmint</a> open-source project</sub>
+
+</div>
