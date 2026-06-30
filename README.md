@@ -4,13 +4,14 @@
 
 # Portmint&nbsp;Pulse
 
-**Your Claude Code usage, minted locally.**
+**The live-limit instrument for Claude Code.**
 
-A private, local-first dashboard for everything Claude Code is doing on this machine —
-live rate-limit windows, daily / weekly / lifetime token & cost, per-model and
-per-project breakdowns, and trend charts spanning a day up to 5 years.
+Your *real* Claude Code limits — live, local, and *before* you hit the wall. Pulse reads the
+actual OAuth rate-limit windows off your login token and puts them everywhere you work: a glanceable
+**status line**, a desktop **warning before the wall**, and a full browser **dashboard** — plus a
+*"you're getting **N× your subscription's worth**"* number priced from your real usage.
 
-*Pure Python standard library. No build step. No cloud. No telemetry. Runs on macOS, Windows, and Linux/WSL.*
+*Pure Python standard library (tzdata on Windows the lone exception). No build step. No cloud. No telemetry. Runs on macOS, Windows, and Linux/WSL.*
 
 [![CI](https://github.com/colelevy08/portmint-pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/colelevy08/portmint-pulse/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-34e0b3.svg)](https://github.com/colelevy08/portmint-pulse/blob/main/LICENSE)
@@ -26,30 +27,101 @@ per-project breakdowns, and trend charts spanning a day up to 5 years.
 
 ---
 
+## Quickstart
+
+PyPI is on the way — until then, install straight from the repo (still one command):
+
+```bash
+pipx install git+https://github.com/colelevy08/portmint-pulse.git && portmint-pulse
+```
+
+No `pipx`? Clone and run it on a stock Python — **nothing to install** on macOS/Linux:
+
+```bash
+git clone https://github.com/colelevy08/portmint-pulse.git && cd portmint-pulse && python3 app.py
+```
+
+It opens a tab at **http://localhost:8787**. *(Once it's on PyPI: `pipx install portmint-pulse`.)*
+Or skip install entirely — **[try the live demo →](https://colelevy08.github.io/portmint-pulse/)**.
+
+---
+
 ## Why this exists
 
-Claude Code records a wealth of usage data on your disk, but gives you no easy way to *see* it.
-Most tools that do are either terminal-only, macOS-only, or need a Node toolchain. Portmint Pulse is
-a **visual browser dashboard** computed from the raw data Claude Code already writes locally — no
-Apple frameworks, no observability stack, no `npm`, no database, nothing to set up.
+Claude Code records a wealth of usage data on your disk and meters you against hidden rate-limit
+windows — but gives you no easy way to *see* either. The usual surprise is finding out you're
+throttled **mid-task**. Pulse fixes that: it reads the **live OAuth limit windows** (not blocks
+inferred from logs) and shows them as four glanceable surfaces, warning you *before* you hit the wall.
+And it does it the lightweight way — a **visual browser dashboard** plus three terminal surfaces,
+computed from the data Claude Code already writes locally. No Apple frameworks, no observability
+stack, no `npm`, no database, nothing to set up.
 
-| | Portmint Pulse | [claude-pulseinator](https://github.com/mikelane/claude-pulseinator) | [ccusage](https://github.com/ryoppippi/ccusage) |
+**Why not just ccusage?** [ccusage](https://github.com/ryoppippi/ccusage) is the excellent multi-agent
+CLI — reach for it if you want one tool across ~15 coding agents. Pulse is the Claude-Code-native
+instrument that reads your **real live limits**, **warns you before the wall**, and needs **zero
+dependencies** (pure Python stdlib, no Node). Different shape, different job.
+
+---
+
+## Four surfaces, one stdlib codebase
+
+| Surface | Command | What it's for |
+|---|---|---|
+| 🖥️ **Dashboard** | `portmint-pulse` | *See it.* Live limit bars + token/cost trends, by-model & by-project, range Day → 5 years. |
+| 📊 **Status line** | `portmint-pulse statusline` | *Glance it.* Your live limits, every turn — **no extra API call, no token cost** (reads what Claude Code already pipes in). |
+| 🔔 **Watch** | `portmint-pulse watch` | *Get warned.* A desktop toast the instant any window crosses **80 / 95 / 100%** — so you're never throttled by surprise. |
+| 🧾 **Summary** | `portmint-pulse summary --json` | *Pipe it.* A one-shot text or `--json` snapshot — no server, no browser. |
+
+The killer features under the hood:
+
+- **Live limits, no API call (status line).** The status line renders from the JSON Claude Code
+  already hands it on stdin — the 5h / 7d / Opus / Sonnet windows in mint → amber → red with a reset
+  countdown — so it costs **zero extra calls and zero tokens** (and falls back to context-window % when
+  limits aren't present):
+  ```
+  [Opus] ▓▓▓▓▓░░░ 62% · 7d-opus 2h14m · $0.06
+  ```
+- **Warn *before* the wall + time-to-the-wall.** `watch` fires a dependency-free, cross-platform
+  desktop notification (macOS `osascript`, Linux `notify-send`, Windows/WSL native PowerShell toast — no
+  module) the moment a window crosses 80 / 95 / 100%, naming which one. Once it's watched your pace for
+  a few minutes, it adds a ⚡ **`~2h to wall`** projection — shown *only* when you're on track to hit
+  100% *before* the window resets. (It's a transparent linear projection over recent velocity, not an ML
+  model.)
+- **Money's-worth multiplier.** A single headline number — *"you're getting **N×** your subscription's
+  worth"* — prices your last-30-days usage at API list rates against your flat Pro / Max 5× / Max 20×
+  plan, computed locally and shown in the dashboard, `summary --plan`, and `--json`. *(API-equivalent
+  value, not your actual bill — a flat plan is a flat fee.)*
+
+**The moat under all of it:** stdlib-only (tzdata on Windows the lone exception), **read-only** (never
+writes or deletes), **localhost-only** bind, **zero telemetry**, and exactly **one outbound call** — the
+same `api.anthropic.com/api/oauth/usage` request Claude Code itself makes (cached ~180s with exponential
+429 backoff). The dashboard page fetches **nothing** — no CDNs, no web fonts, no Chart.js-from-a-CDN.
+Pulse also dedupes transcript records by `requestId` (Claude Code logs each request 2–10×, so a naive
+summer over-counts tokens ~2.3×) — so the numbers are simply more correct.
+
+---
+
+## How Pulse compares
+
+The Claude Code usage space is healthy — pick the tool whose *shape* fits you. This is an honest map
+(as of 2026-06, based on each project's public README); see [the full comparison below](#the-full-comparison).
+
+| | **Portmint Pulse** | [ccusage](https://github.com/ryoppippi/ccusage) | [Claude-Code-Usage-Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) |
 |---|---|---|---|
-| Form | **web dashboard** (charts, gauges) | macOS menubar | CLI text reports |
-| Runs on macOS / Windows / Linux | **✅ / ✅ / ✅** | ✅ / ❌ / ❌ | ✅ / ✅ / ✅ |
-| Live OAuth limit bars | ✅ 4 windows (5h, 7d all-models, 7d Opus, 7d Sonnet) + pay-as-you-go credits | ✅ | infers from local data |
-| Token / cost history | ✅ computed locally, **no setup** | uses SigNoz + OpenTelemetry | ✅ |
-| Per-project breakdown | ✅ visual bars | ❌ | ✅ (text) |
-| Dependencies | **Python stdlib only** | a Swift toolchain | a Node toolchain |
+| Form | **web dashboard + 3 terminal surfaces** | CLI text reports | Rich TUI |
+| Live limit bars in the **status line** | **✅ (no extra API call)** | status line is beta | via official statusline rate_limits |
+| Limit source | **reads live OAuth windows** | *infers* blocks from local data | reads live limits + P90 forecast |
+| Warn-before-the-wall **desktop** alert | **✅ (80 / 95 / 100%)** | ❌ | ❌ (in-terminal forecast) |
+| Money's-worth multiplier | **✅** | ❌ | ❌ |
+| Dependencies | **stdlib only** (tzdata on Windows) | a Node toolchain | Rich + pydantic + numpy + … |
+| Telemetry | **none** | none | none |
+| Runs on | **macOS · Windows · Linux/WSL** | macOS · Windows · Linux | macOS · Windows · Linux |
+| Language | **Python (stdlib)** | Node / npm | Python |
 
-<sub>Comparison as of 2026-06; based on each project's public README. See [How Pulse compares](#how-pulse-compares) for the fuller, honest picture.</sub>
-
-**Privacy, in three lines** — the whole pitch:
-
-- 🔒 **Read-only.** It only reads files Claude Code already wrote; it never writes or deletes anything.
-- 📡 **One outbound call.** Your token is used in exactly one request — to `api.anthropic.com` for your
-  live limits (the same call Claude Code makes). The dashboard page itself fetches **nothing** (no fonts/CDNs).
-- 🏠 **Localhost only.** Binds to `127.0.0.1`; no telemetry, no analytics, no database.
+**Where they win, honestly:** `ccusage` is the category leader and covers ~15 agents — reach for it if
+you want multi-agent breadth. `Claude-Code-Usage-Monitor` has genuine P90 limit *forecasting* in a
+beautiful TUI. Pulse is Claude-Code-focused on purpose, and wins on **real live limits across four
+surfaces, warn-before-the-wall, zero dependencies, and zero telemetry**.
 
 ---
 
@@ -197,10 +269,9 @@ portmint-pulse --version
 
 ---
 
-## How Pulse compares
+## The full comparison
 
-The Claude Code usage space is healthy — pick the tool whose *shape* fits you. Pulse is the
-**cross-platform visual dashboard with real live limit bars**; here's an honest map of the neighbors:
+The quick table above, expanded — the neighbors and where each shines:
 
 - **[ccusage](https://github.com/ryoppippi/ccusage)** — the category leader. A fast CLI that prints
   daily/weekly/session token & cost reports (now across ~15 agents). Great if you want terminal text
