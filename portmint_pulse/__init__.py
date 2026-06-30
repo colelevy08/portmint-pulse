@@ -5,4 +5,4 @@ with ``pipx``/``uv``/``pip`` to get the ``portmint-pulse`` command, or run it fr
 checkout with ``python3 app.py``. The CLI entry point is ``portmint_pulse.cli:main``.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

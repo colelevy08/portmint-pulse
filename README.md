@@ -102,6 +102,33 @@ Preview it without configuring anything: `portmint-pulse statusline --demo`. *(O
 
 ---
 
+## Warn me before the wall — `watch`
+
+Run it in any terminal (or background it) and it fires a **desktop notification** the moment any limit
+window crosses **80 / 95 / 100%** — naming which one — so you're never throttled mid-task by surprise:
+
+```bash
+portmint-pulse watch                 # poll every 30s; desktop notifications on
+portmint-pulse watch --interval 60   # gentler cadence (5–600s)
+portmint-pulse watch --no-desktop    # console only
+```
+
+Notifications are dependency-free and cross-platform — macOS (`osascript`), Linux (`notify-send`),
+**Windows & WSL** (a native toast via PowerShell, no module to install) — and fall back to a console
+line if no notifier is available. It reuses the cached limits poll, so it never rate-limits your token,
+keeps **no state on disk** (zero telemetry), and re-arms each alert when a new window period begins.
+
+## One-shot `summary`
+
+A quick text (or `--json`) snapshot — no server, no browser:
+
+```bash
+portmint-pulse summary          # today / week / lifetime + live limit bars + which binds first
+portmint-pulse summary --json   # the same, machine-readable
+```
+
+---
+
 ## Install
 
 Pick whichever you like — all give you the `portmint-pulse` command (or just run from source).

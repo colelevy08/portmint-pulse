@@ -58,12 +58,17 @@ def _open_browser(url: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    # Subcommand: the status-line renderer. Dispatched BEFORE importing the server
-    # so it stays fast (it runs on every Claude Code turn).
-    if args and args[0] == "statusline":
-        from .statusline import main as statusline_main
-
-        return statusline_main(args[1:])
+    # Subcommands are dispatched BEFORE importing the server so they stay light
+    # (e.g. `statusline` runs on every Claude Code turn).
+    if args and args[0] in ("statusline", "watch", "summary"):
+        sub = args[0]
+        if sub == "statusline":
+            from .statusline import main as sub_main
+        elif sub == "watch":
+            from .watch import main as sub_main
+        else:
+            from .summary import main as sub_main
+        return sub_main(args[1:])
     return _run_dashboard(args)
 
 
@@ -76,7 +81,7 @@ def _run_dashboard(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="portmint-pulse",
         description="Portmint Pulse — a local, private Claude Code usage dashboard.",
-        epilog="subcommand: `portmint-pulse statusline` renders the Claude Code status line (reads the session blob on stdin). See the README.",
+        epilog="subcommands: `statusline` (Claude Code status line), `watch` (warn before a rate limit, desktop notifications), `summary` (one-shot text/--json usage). See the README.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind address (default 127.0.0.1; use 0.0.0.0 to expose on your LAN).")
     parser.add_argument("--port", type=int, default=8787, help="Port (default 8787).")

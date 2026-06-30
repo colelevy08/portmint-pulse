@@ -4,6 +4,23 @@ All notable changes to Portmint Pulse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-06-30
+
+### Added
+- **`watch`** — `portmint-pulse watch` polls your live limit windows and fires a **desktop
+  notification** when any crosses 80 / 95 / 100% (naming which one) so you're warned *before* the wall.
+  Dependency-free cross-platform notifications (macOS `osascript`, Linux `notify-send`, Windows/WSL a
+  native PowerShell toast — no module), with a console fallback and a branded title + detailed body.
+  Edge-triggered (one alert per crossing; re-arms only after the window resets) so it stays quiet unless
+  something actually changed. Reuses the cached limits poll (no extra token risk), keeps no state on
+  disk. `--interval` (5–600s), `--no-desktop`.
+- **`summary`** — `portmint-pulse summary` prints a one-shot text (or `--json`) snapshot: today / week /
+  lifetime cost + tokens, each live limit bucket with a bar and reset, and which window binds first.
+
+### Changed
+- CI: the macOS × Python 3.9 cell ran on chronically-queued runners; dropped it (3.9 is covered on
+  Linux + Windows, macOS on 3.10–3.13) for reliably fast, green CI.
+
 ## [1.1.0] — 2026-06-29
 
 ### Added
