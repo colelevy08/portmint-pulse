@@ -27,7 +27,11 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-CREDENTIALS_PATH = os.path.expanduser("~/.claude/.credentials.json")
+# Honours CLAUDE_CONFIG_DIR (like Claude Code itself) so relocated installs work.
+CREDENTIALS_PATH = os.path.join(
+    os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude"),
+    ".credentials.json",
+)
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
 # macOS Keychain service name that Claude Code stores its credentials blob under.
