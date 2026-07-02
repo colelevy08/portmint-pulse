@@ -27,10 +27,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
 from typing import TypedDict
 
-from . import pricing
+from . import archive, pricing
+
+
+def _claude_config_dir() -> str:
+    """Claude Code's config directory — honours CLAUDE_CONFIG_DIR like Claude
+    Code itself does, so relocated installs still show their usage."""
+    return os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
+
 
 # Where Claude Code keeps its per-session transcripts (override-able for tests).
-PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
+PROJECTS_DIR = os.path.join(_claude_config_dir(), "projects")
 
 
 @dataclass
@@ -57,6 +64,58 @@ class _FileSummary:
     by_day: dict[str, dict[str, _Bucket]] = field(default_factory=dict)
     first_ts: datetime | None = None
     last_ts: datetime | None = None
+
+
+def _summary_to_dict(s: _FileSummary) -> dict:
+    """Serialize a _FileSummary for the on-disk archive (compact arrays)."""
+    return {
+        "mtime": s.mtime,
+        "size": s.size,
+        "session_id": s.session_id,
+        "project": s.project,
+        "first_ts": s.first_ts.isoformat() if s.first_ts else None,
+        "last_ts": s.last_ts.isoformat() if s.last_ts else None,
+        "by_day": {
+            day: {
+                model: [b.messages, b.input, b.output, b.cache_read, b.cache_write_5m, b.cache_write_1h]
+                for model, b in models.items()
+            }
+            for day, models in s.by_day.items()
+        },
+    }
+
+
+def _summary_from_dict(d: dict) -> _FileSummary | None:
+    """Rebuild a _FileSummary from an archived dict; None if malformed.
+
+    Fully defensive — the archive is user-editable JSON, and one bad entry must
+    not take down the whole history.
+    """
+    try:
+        summary = _FileSummary(
+            mtime=float(d.get("mtime", 0.0)),
+            size=int(d.get("size", 0)),
+            session_id=str(d.get("session_id", "")),
+            project=str(d.get("project", "(unknown)")),
+            first_ts=_parse_ts(d.get("first_ts")),
+            last_ts=_parse_ts(d.get("last_ts")),
+        )
+        by_day = d.get("by_day")
+        if not isinstance(by_day, dict):
+            return None
+        for day, models in by_day.items():
+            if not isinstance(models, dict):
+                continue
+            for model, row in models.items():
+                if not isinstance(row, list) or len(row) != 6:
+                    continue
+                summary.by_day.setdefault(str(day), {})[str(model)] = _Bucket(
+                    messages=int(row[0]), input=int(row[1]), output=int(row[2]),
+                    cache_read=int(row[3]), cache_write_5m=int(row[4]), cache_write_1h=int(row[5]),
+                )
+        return summary
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_ts(raw: object) -> datetime | None:
@@ -268,10 +327,21 @@ def _summarise_file(path: str, mtime: float, size: int, tz: tzinfo) -> _FileSumm
 class TranscriptStore:
     """Holds the per-file cache and produces aggregated stats on demand."""
 
-    def __init__(self, tz: tzinfo, projects_dir: str = PROJECTS_DIR):
+    def __init__(self, tz: tzinfo, projects_dir: str = PROJECTS_DIR, archive_path: str | None = None):
         self.tz = tz
         self.projects_dir = projects_dir
+        # Where the persistent history archive lives (see archive.py). Pass "" to
+        # disable archiving entirely (e.g. throwaway analysis).
+        self.archive_path = archive.default_path() if archive_path is None else archive_path
         self._cache: dict[str, _FileSummary] = {}
+        # Summaries of transcripts Claude Code has since DELETED (its 30-day
+        # cleanup). Loaded from the archive so old usage keeps counting.
+        self._archived: dict[str, _FileSummary] = {}
+        if self.archive_path:
+            for path, d in archive.load(self.archive_path).items():
+                restored = _summary_from_dict(d)
+                if restored is not None:
+                    self._archived[path] = restored
         # Memo for the Day view's hourly pass: (day, file-signature) -> series, so
         # back-to-back Day refreshes don't re-read a big active session file unless
         # it actually changed.
@@ -286,7 +356,10 @@ class TranscriptStore:
         reparsed = 0
         seen: set[str] = set()
         if not os.path.isdir(self.projects_dir):
+            # No projects dir (fresh machine, or Claude Code moved) — the live
+            # cache empties but archived history keeps standing in.
             self._cache.clear()
+            self._persist_archive()
             return 0
 
         for root, _dirs, files in os.walk(self.projects_dir):
@@ -307,10 +380,45 @@ class TranscriptStore:
                     self._cache[path] = _summarise_file(path, mtime, size, self.tz)
                     reparsed += 1
 
-        # Drop cache entries for files that have been deleted.
+        # A file that vanished was pruned by Claude Code's cleanup — move its
+        # summary to the archive so its usage keeps counting. With archiving
+        # disabled (archive_path=""), vanished files just drop, as before.
+        archived_now = 0
         for gone in set(self._cache) - seen:
-            del self._cache[gone]
+            if self.archive_path:
+                self._archived[gone] = self._cache.pop(gone)
+                archived_now += 1
+            else:
+                del self._cache[gone]
+        # A live file always outranks its archived twin (e.g. it was restored).
+        for path in seen & set(self._archived):
+            del self._archived[path]
+
+        if reparsed or archived_now:
+            self._persist_archive()
         return reparsed
+
+    def _persist_archive(self) -> None:
+        """Write every summary we know about (live + already-archived) to disk.
+
+        Live files are included so history survives even when transcripts are
+        pruned while Pulse isn't running — next launch, the missing files are
+        simply served from the archive.
+        """
+        if not self.archive_path:
+            return
+        files = {p: _summary_to_dict(s) for p, s in self._archived.items()}
+        files.update({p: _summary_to_dict(s) for p, s in self._cache.items()})
+        archive.save(self.archive_path, files)
+
+    def _all_summaries(self):
+        """Every summary that should count: live transcripts + archived history.
+
+        Archived entries whose path is currently live are already pruned in
+        refresh(), so this never double-counts a session.
+        """
+        yield from self._cache.values()
+        yield from self._archived.values()
 
     def hourly_series(self, day_str: str) -> list[dict]:
         """Token/cost per hour (0–23) for one local calendar day — for the Day view.
@@ -382,8 +490,12 @@ class TranscriptStore:
 
         first_ts: datetime | None = None
         all_active_days: set[str] = set()
+        # Models we couldn't price (unknown ids) — surfaced so a $0 line is a
+        # visible diagnostic, not a silent lie. "<synthetic>" is Claude Code's
+        # marker for locally-generated turns and is genuinely free, so skip it.
+        unpriced: set[str] = set()
 
-        for summary in self._cache.values():
+        for summary in self._all_summaries():
             if summary.first_ts is not None and (first_ts is None or summary.first_ts < first_ts):
                 first_ts = summary.first_ts
             for day, model_buckets in summary.by_day.items():
@@ -391,6 +503,8 @@ class TranscriptStore:
                 in_window = day in window_days
                 for model, b in model_buckets.items():
                     total = b.input + b.output + b.cache_read + b.cache_write_5m + b.cache_write_1h
+                    if total > 0 and model not in ("<synthetic>", "(none)") and pricing.normalize_model(model) is None:
+                        unpriced.add(model)
                     cost = pricing.price(
                         model,
                         input_tokens=b.input,
@@ -501,4 +615,8 @@ class TranscriptStore:
             "models": models,
             "projects": projects,
             "transcript_files": len(self._cache),
+            # Sessions Claude Code has deleted but we still remember (see archive.py).
+            "archived_files": len(self._archived),
+            # Raw model ids we couldn't price — their tokens count, their cost is $0.
+            "unpriced_models": sorted(unpriced),
         }

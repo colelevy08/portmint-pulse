@@ -231,8 +231,8 @@
 
   <footer>
     <div>
-      Portmint Pulse · <span id="filecount">—</span> sessions indexed · <a href="https://portmint.com" target="_blank" rel="noopener">portmint.com</a><br>
-      <span style="color:var(--muted)">Costs are equivalent API list-price estimates — not your actual subscription billing.</span>
+      Portmint Pulse · <span id="filecount">—</span> sessions indexed<span id="archived-note"></span> · <a href="https://portmint.com" target="_blank" rel="noopener">portmint.com</a><br>
+      <span style="color:var(--muted)">Costs are equivalent API list-price estimates — not your actual subscription billing.</span><span id="unpriced-note" style="color:var(--muted)"></span>
     </div>
     <div id="gen">—</div>
   </footer>
@@ -489,6 +489,13 @@ async function load() {
       metaFn:r => `<b>${fmtCost(r.cost)}</b> · ${fmtInt(r.sessions)} sessions`
     });
     document.getElementById("filecount").textContent = fmtInt(d.transcript_files);
+    // Sessions Claude Code has since deleted but Pulse still remembers.
+    document.getElementById("archived-note").textContent =
+      (d.archived_files > 0) ? ` (+${fmtInt(d.archived_files)} remembered after cleanup)` : "";
+    // Unknown model ids count tokens but price as $0 — say so instead of lying.
+    document.getElementById("unpriced-note").textContent =
+      (d.unpriced_models && d.unpriced_models.length)
+        ? ` Unpriced (counted at $0): ${d.unpriced_models.join(", ")}.` : "";
     document.getElementById("gen").textContent = "Generated " + d.generated_at;
     document.getElementById("updated").innerHTML =
       `<b>Updated</b> ${new Date().toLocaleTimeString()}<br>stats every 60s · limits every few min`;
