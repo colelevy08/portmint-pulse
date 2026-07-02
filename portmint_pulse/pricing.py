@@ -22,12 +22,36 @@ premium — so "claude-opus-4-8[1m]" is priced identically to the base model.
 from __future__ import annotations
 
 # Base input/output price per MILLION tokens, in USD.
+# Includes retired/deprecated models so OLD transcripts (and the archived history
+# of pruned ones) still price correctly instead of silently costing $0.
+# Verified against platform.claude.com/docs/en/about-claude/pricing (2026-07-01).
 _BASE_PER_MTOK: dict[str, dict[str, float]] = {
+    # Current generation
+    "claude-fable-5":    {"input": 10.0, "output": 50.0},
+    "claude-mythos-5":   {"input": 10.0, "output": 50.0},
     "claude-opus-4-8":   {"input": 5.0,  "output": 25.0},
     "claude-opus-4-7":   {"input": 5.0,  "output": 25.0},
+    "claude-opus-4-6":   {"input": 5.0,  "output": 25.0},
+    # Sonnet 5 lists at $3/$15 standard (a $2/$10 intro runs through 2026-08-31);
+    # we price at standard — the "API-equivalent value" comparison should use the
+    # durable price, not a temporary promo.
+    "claude-sonnet-5":   {"input": 3.0,  "output": 15.0},
     "claude-sonnet-4-6": {"input": 3.0,  "output": 15.0},
     "claude-haiku-4-5":  {"input": 1.0,  "output": 5.0},
-    "claude-fable-5":    {"input": 10.0, "output": 50.0},
+    # Legacy / deprecated / retired (for pricing old transcripts)
+    "claude-opus-4-5":     {"input": 5.0,  "output": 25.0},
+    "claude-opus-4-1":     {"input": 15.0, "output": 75.0},
+    "claude-opus-4":       {"input": 15.0, "output": 75.0},
+    "claude-opus-4-0":     {"input": 15.0, "output": 75.0},
+    "claude-sonnet-4-5":   {"input": 3.0,  "output": 15.0},
+    "claude-sonnet-4":     {"input": 3.0,  "output": 15.0},
+    "claude-sonnet-4-0":   {"input": 3.0,  "output": 15.0},
+    "claude-3-7-sonnet":   {"input": 3.0,  "output": 15.0},
+    "claude-3-5-sonnet":   {"input": 3.0,  "output": 15.0},
+    "claude-3-5-haiku":    {"input": 0.8,  "output": 4.0},
+    "claude-3-opus":       {"input": 15.0, "output": 75.0},
+    "claude-3-sonnet":     {"input": 3.0,  "output": 15.0},
+    "claude-3-haiku":      {"input": 0.25, "output": 1.25},
 }
 
 # Cache-price multipliers applied to a model's input price (see module docstring).
@@ -59,22 +83,48 @@ def _build_per_token_rates() -> dict[str, dict[str, float]]:
 _RATES = _build_per_token_rates()
 
 
+# Provider prefixes seen on Bedrock / Vertex-routed model ids. Longest first so
+# "us.anthropic." wins over "anthropic.".
+_PROVIDER_PREFIXES = ("us.anthropic.", "eu.anthropic.", "apac.anthropic.", "anthropic.")
+
+
 def normalize_model(raw: str | None) -> str | None:
     """Map a raw transcript model string onto a known pricing key.
 
     Transcripts contain things like "claude-opus-4-8[1m]" (the 1M-context
     variant), "claude-haiku-4-5-20251001" (a dated snapshot), or "<synthetic>"
-    (locally generated, not a real model call). We strip the bracketed suffix
-    and any trailing date, then look the result up. Anything we don't recognise
-    (including "<synthetic>") returns None and is treated as zero-cost.
+    (locally generated, not a real model call). Users on Bedrock or Vertex see
+    provider-flavoured ids like "us.anthropic.claude-opus-4-8-v1:0" or
+    "claude-opus-4-5@20251101". We peel all of that off, then look the result
+    up. Anything we don't recognise (including "<synthetic>") returns None and
+    is treated as zero-cost.
     """
     if not raw:
         return None
     name = raw.strip()
+    # Drop a Bedrock-style provider/region prefix, e.g. "us.anthropic.".
+    for prefix in _PROVIDER_PREFIXES:
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
     # Drop a bracketed context-window tag, e.g. "[1m]".
     bracket = name.find("[")
     if bracket != -1:
         name = name[:bracket]
+    # Drop a Vertex-style "@20251101" version suffix.
+    at = name.find("@")
+    if at != -1:
+        name = name[:at]
+    # Drop a Bedrock-style ":0" build suffix, then a "-v1" version suffix.
+    colon = name.find(":")
+    if colon != -1:
+        name = name[:colon]
+    parts = name.rsplit("-", 1)
+    if len(parts) == 2 and len(parts[1]) >= 2 and parts[1][0] == "v" and parts[1][1:].isdigit():
+        name = parts[0]
+    # Drop a "-latest" alias suffix.
+    if name.endswith("-latest"):
+        name = name[: -len("-latest")]
     # Drop a trailing "-YYYYMMDD" dated-snapshot suffix.
     parts = name.rsplit("-", 1)
     if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 8:

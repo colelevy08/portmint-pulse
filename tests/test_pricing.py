@@ -48,3 +48,26 @@ def test_subscription_plan_lookup():
     assert pricing.plan_price(None) is None
     assert pricing.plan_label("max5") == "Claude Max 5×"
     assert pricing.plan_label("nope") is None
+
+
+def test_normalize_strips_provider_prefixes():
+    # Bedrock-style ids: region prefix + "-vN:0" build suffix.
+    assert pricing.normalize_model("anthropic.claude-opus-4-8") == "claude-opus-4-8"
+    assert pricing.normalize_model("us.anthropic.claude-opus-4-8-v1:0") == "claude-opus-4-8"
+    assert pricing.normalize_model("eu.anthropic.claude-3-5-sonnet-20241022-v2:0") == "claude-3-5-sonnet"
+    # Vertex-style "@date" version separator.
+    assert pricing.normalize_model("claude-opus-4-5@20251101") == "claude-opus-4-5"
+    # "-latest" alias.
+    assert pricing.normalize_model("claude-3-5-haiku-latest") == "claude-3-5-haiku"
+
+
+def test_legacy_models_are_priced():
+    # Old transcripts must not silently cost $0.
+    assert pricing.price("claude-opus-4-1", input_tokens=1_000_000) == 15.0
+    assert pricing.price("claude-opus-4-1-20250805", output_tokens=1_000_000) == 75.0
+    assert pricing.price("claude-sonnet-4-5-20250929", input_tokens=1_000_000) == 3.0
+    assert pricing.price("claude-3-7-sonnet-20250219", output_tokens=1_000_000) == 15.0
+    assert pricing.price("claude-3-5-haiku-20241022", input_tokens=1_000_000) == 0.8
+    assert pricing.price("claude-3-haiku-20240307", input_tokens=1_000_000) == 0.25
+    assert pricing.price("claude-3-opus-20240229", output_tokens=1_000_000) == 75.0
+    assert pricing.price("claude-sonnet-5", input_tokens=1_000_000) == 3.0
