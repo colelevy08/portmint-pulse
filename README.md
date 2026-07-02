@@ -10,6 +10,8 @@ Your *real* Claude Code limits — live, local, and *before* you hit the wall. P
 actual OAuth rate-limit windows off your login token and puts them everywhere you work: a glanceable
 **status line**, a desktop **warning before the wall**, and a full browser **dashboard** — plus a
 *"you're getting **N× your subscription's worth**"* number priced from your real usage.
+And your history is **permanent**: Claude Code deletes transcripts after ~30 days — Pulse archives
+every session's stats locally, so your lifetime numbers never shrink.
 
 *Pure Python standard library (tzdata on Windows the lone exception). No build step. No cloud. No telemetry. Runs on macOS, Windows, and Linux/WSL.*
 
@@ -91,9 +93,15 @@ The killer features under the hood:
   worth"* — prices your last-30-days usage at API list rates against your flat Pro / Max 5× / Max 20×
   plan, computed locally and shown in the dashboard, `summary --plan`, and `--json`. *(API-equivalent
   value, not your actual bill — a flat plan is a flat fee.)*
+- **History that survives Claude Code's cleanup.** Claude Code prunes session transcripts after
+  ~30 days (`cleanupPeriodDays`) — every other log-based tool quietly loses that history. Pulse
+  archives each session's compact stats (day/model token counts — never message content) to a tiny
+  local JSON file the moment it indexes them, and keeps counting them after the transcript is gone.
+  Run Pulse once a month and your lifetime numbers are permanent.
 
-**The moat under all of it:** stdlib-only (tzdata on Windows the lone exception), **read-only** (never
-writes or deletes), **localhost-only** bind, **zero telemetry**, and exactly **one outbound call** — the
+**The moat under all of it:** stdlib-only (tzdata on Windows the lone exception), **read-only on
+Claude Code's data** (never writes or deletes anything under `~/.claude`; its own history archive
+lives in Pulse's data dir), **localhost-only** bind, **zero telemetry**, and exactly **one outbound call** — the
 same `api.anthropic.com/api/oauth/usage` request Claude Code itself makes (cached ~180s with exponential
 429 backoff). The dashboard page fetches **nothing** — no CDNs, no web fonts, no Chart.js-from-a-CDN.
 Pulse also dedupes transcript records by `requestId` (Claude Code logs each request 2–10×, so a naive
@@ -140,6 +148,9 @@ surfaces, warn-before-the-wall, zero dependencies, and zero telemetry**.
 - **Money's worth** — your last-30-days usage priced at API rates vs your flat subscription (Pro / Max 5× /
   Max 20×, remembered locally): a single *"you're getting **N× your subscription's worth**"* multiplier.
   Also in `summary --plan`.
+- **Permanent history** — sessions Claude Code has since deleted keep counting (the footer shows how
+  many are being *remembered after cleanup*). Unknown model names are counted at $0 and listed in the
+  footer, never silently hidden.
 
 Auto-refreshes every 60 seconds; manual **Refresh** button in the header. Days are bucketed in **your
 machine's local timezone** by default (`--timezone` to override).
@@ -297,6 +308,11 @@ setup? You're home.
 |---|---|
 | `~/.claude/projects/**/*.jsonl` | Token usage, cost, models, projects, history. One JSON-lines file per session; every assistant turn records its model, exact token counts, timestamp, and working directory. |
 | `~/.claude/.credentials.json` (Linux/WSL/Windows) **or** the macOS **Keychain** | The OAuth token, used for one HTTPS call to `api.anthropic.com/api/oauth/usage` to fetch your live limit windows (cached ~180s with exponential 429 backoff). |
+| Pulse's own **usage archive** (`~/.local/share/portmint-pulse/archive.json` on Linux, `~/Library/Application Support/portmint-pulse/` on macOS, `%LOCALAPPDATA%\portmint-pulse\` on Windows) | The **write-once safety copy** of each session's stats — day/model token counts, session id, project name; **never message content**. This is what keeps your history intact after Claude Code's ~30-day transcript cleanup. Move it with `PULSE_DATA_DIR`. |
+
+Relocated your Claude Code install? Pulse honours **`CLAUDE_CONFIG_DIR`** the same way Claude Code
+does — both the transcripts and the credentials are found automatically. (`--projects-dir` /
+`PULSE_PROJECTS_DIR` still override just the transcripts path.)
 
 ### About the cost numbers
 
@@ -310,14 +326,22 @@ standard cache multipliers (5-minute cache write = 1.25× input, 1-hour write = 
 
 | Model | Input | Output |
 |---|---|---|
-| Opus 4.8 (incl. `[1m]`) | $5 | $25 |
-| Opus 4.7 | $5 | $25 |
-| Sonnet 4.6 | $3 | $15 |
+| Fable 5 / Mythos 5 | $10 | $50 |
+| Opus 4.8 / 4.7 / 4.6 / 4.5 (incl. `[1m]`) | $5 | $25 |
+| Opus 4.1 / 4 / Claude 3 Opus | $15 | $75 |
+| Sonnet 5 / 4.6 / 4.5 / 4 / 3.7 / 3.5 | $3 | $15 |
 | Haiku 4.5 | $1 | $5 |
-| Fable 5 | $10 | $50 |
+| Haiku 3.5 | $0.80 | $4 |
+| Haiku 3 | $0.25 | $1.25 |
 
-A model Pulse doesn't recognize (a brand-new release, or `<synthetic>` local messages) still has its
-tokens counted, but is priced at $0 until you add it to `pricing.py`.
+Legacy and retired models are priced too, so your **archived history** and old transcripts cost out
+correctly instead of silently reading $0. Model names are normalized aggressively — dated snapshots
+(`claude-haiku-4-5-20251001`), context tags (`[1m]`), Bedrock ids (`us.anthropic.claude-opus-4-8-v1:0`),
+and Vertex ids (`claude-opus-4-5@20251101`) all resolve to the right price.
+
+A model Pulse doesn't recognize (a brand-new release) still has its tokens counted at $0 — and is
+**listed in the dashboard footer** so you know, until you add it to `pricing.py`. (`<synthetic>`
+marks locally-generated messages and is genuinely free.)
 
 ---
 
@@ -327,7 +351,8 @@ tokens counted, but is priced at $0 until you add it to `pricing.py`.
 app.py                      # run-from-a-checkout shim → portmint_pulse.cli:main
 portmint_pulse/
   cli.py                    # argument parsing, timezone resolution, the startup banner
-  pricing.py                # per-token pricing + model-name normalization
+  pricing.py                # per-token pricing (current + legacy models) + model-name normalization
+  archive.py                # the persistent usage archive — history survives Claude Code's cleanup
   transcripts.py            # parse ~/.claude/projects, incremental (mtime,size) cache, aggregate
   usage.py                  # fetch live limit windows (file or macOS Keychain creds), cached + 429 backoff
   tz.py                     # local-timezone resolution: DST-aware on macOS/Linux, fixed-offset on Windows
@@ -367,7 +392,16 @@ python tools/gen_demo.py     # serves a dashboard on fabricated data at http://1
   `~/.claude/projects/` simply has no `.jsonl` sessions yet. It fills in automatically as you use Claude Code.
 - **"Could not start server… port in use"** — something's already on 8787; run with `--port 9000`.
 - **A model shows up with $0 cost** — its name isn't in `pricing.py` (a brand-new model, or
-  `<synthetic>` local messages). Add it to `_BASE_PER_MTOK`.
+  `<synthetic>` local messages). Unpriced models are listed in the dashboard footer; add real ones
+  to `_BASE_PER_MTOK`.
+- **My lifetime numbers used to shrink over time** — that was Claude Code's ~30-day transcript
+  cleanup (`cleanupPeriodDays`) deleting the raw data. Pulse now archives every session's stats the
+  first time it sees them, so history it has indexed once is permanent. History deleted *before*
+  Pulse ever ran can't be recovered — start running Pulse (any surface) at least once a month.
+- **Where is my archive / how do I move or reset it?** — one JSON file (see
+  [Where the data comes from](#where-the-data-comes-from)); point `PULSE_DATA_DIR` somewhere else to
+  move it, or delete the file to start fresh (only live transcripts will be counted again).
+- **My `~/.claude` lives somewhere else** — Pulse honours `CLAUDE_CONFIG_DIR`, exactly like Claude Code.
 - **Windows shows the wrong day boundaries** — pass `--timezone "America/Chicago"` (or your zone).
   Windows has no system timezone database, so named zones use the bundled `tzdata`.
 

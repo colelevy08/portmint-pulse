@@ -4,6 +4,27 @@ All notable changes to Portmint Pulse are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-07-01
+
+### Added
+- **Permanent usage history** — Claude Code prunes session transcripts after ~30 days
+  (`cleanupPeriodDays`), which used to silently shrink Pulse's lifetime numbers. Pulse now archives
+  every session's compact stats (day/model token counts, project, session id — never message content)
+  to a small JSON file in the platform data dir the first time it indexes them, and keeps counting
+  them after the transcript is deleted — including deletions that happen while Pulse isn't running.
+  New `archive` module; atomic writes; `PULSE_DATA_DIR` overrides the location; pass
+  `archive_path=""` to `TranscriptStore` to disable. The dashboard footer shows how many sessions
+  are being remembered after cleanup.
+- **Legacy model pricing** — Opus 4.6/4.5/4.1/4, Sonnet 5/4.5/4/3.7/3.5, Haiku 3.5/3, Claude 3
+  Opus, and Mythos 5 now price correctly (verified against Anthropic's published rates), so old
+  transcripts and archived history no longer read as $0.
+- **Provider-flavoured model ids** — Bedrock (`us.anthropic.claude-opus-4-8-v1:0`) and Vertex
+  (`claude-opus-4-5@20251101`) style ids, plus `-latest` aliases, normalize to the right price.
+- **Unpriced-model diagnostic** — model names Pulse can't price are listed in the dashboard footer
+  (and in `/api/stats` as `unpriced_models`) instead of silently costing $0.
+- **`CLAUDE_CONFIG_DIR` support** — relocated Claude Code installs are found automatically, for both
+  transcripts and the OAuth credentials file, matching Claude Code's own behavior.
+
 ## [1.4.0] — 2026-06-30
 
 ### Added
